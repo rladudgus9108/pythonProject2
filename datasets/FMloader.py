@@ -1,6 +1,6 @@
 import glob
 from PIL import Image
-from scipy.ndimage.interpolation import shift
+from scipy.ndimage import shift
 from datasets.randaug import RandAugment
 from datasets.utils import *
 

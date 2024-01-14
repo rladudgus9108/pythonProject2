@@ -45,16 +45,41 @@ class CustomImageDataset(Dataset):
         return img, label
 
     def __len__(self):
-        #if self.inputs
+        # if self.inputs
         return self.inputs.shape[0]
 
 
 def get_MNIST():
     dataset_train = datasets.MNIST(root=opt.data_root, train=True, download=True,
-                                       transform = get_default_data_transforms(opt.dataset, verbose=False)[0])
+                                   transform=get_default_data_transforms(opt.dataset, verbose=False)[0])
     dataset_test = datasets.MNIST(root=opt.data_root, train=False, download=True,
-                                      transform = get_default_data_transforms(opt.dataset, verbose=False)[1])
-    return dataset_train.train_data.numpy(), dataset_train.train_labels.numpy(), dataset_test.test_data.numpy(), dataset_test.test_labels.numpy(), dataset_train
+                                  transform=get_default_data_transforms(opt.dataset, verbose=False)[1])
+    # print(dataset_train.train_data.numpy())
+    # print("--------")
+    # print(dataset_train.train_labels.numpy())
+    # print("--------")
+    # print(dataset_test.test_data.numpy())
+    # print("--------")
+    # print(dataset_test.test_labels.numpy())
+    # print("--------")
+    # print(dataset_train)
+
+    return dataset_train.train_data.numpy(), dataset_train.train_labels.numpy(), dataset_test.test_data.numpy(), dataset_test.test_labels.numpy()
+
+
+"""
+dataset_train print하면
+Dataset MNIST
+    Number of datapoints: 60000
+    Root location: ./data/
+    Split: Train
+    StandardTransform
+Transform: Compose(
+               ToPILImage()
+               ToTensor()
+               Normalize(mean=(0.1307,), std=(0.3081,))
+           )
+"""
 
 
 def get_CIFAR10():
@@ -67,7 +92,6 @@ def get_CIFAR10():
 
     x_train, y_train = data_train.data.transpose((0, 3, 1, 2)), np.array(data_train.targets)
     x_test, y_test = data_test.data.transpose((0, 3, 1, 2)), np.array(data_test.targets)
-
 
     return x_train, y_train, x_test, y_test
 
@@ -126,13 +150,13 @@ def relabel_K(dataset_train, unlabel_dict):
     count = 0
     for index, label in enumerate(dataset_train.labels):
         if count < len(unlabel_dict) and index == unlabel_dict[count]:
-            dataset_train.labels[index] += opt.num_classes
-            count += 1
+            dataset_train.labels[index] += opt.num_classes # 여기에서 + 10을 해줌, unlabel 데이터로 만들기 위해서
+            count += 1 # 애초에 보면 dataset_train에 접근하여서 label 자체를 변경하는 구조 원래 1이 였다면 11으로 바꿈
     return dataset_train
 
 
 def puSpilt_index(dataset, indexlist, samplesize):
-
+    # label 과 unlabel data를 나누는 함수
     labels = dataset.labels.numpy()
 
     labeled_size = 0
@@ -140,37 +164,39 @@ def puSpilt_index(dataset, indexlist, samplesize):
         labeled_size += int(samplesize[i] * opt.positiveRate)
     unlabeled_size = len(labels) - labeled_size
 
-    #l_shard = [i for i in range(int(singleClass * pos_rate))]
+    # l_shard = [i for i in range(int(singleClass * pos_rate))]
     labeled = np.array([], dtype='int64')
     unlabeled = np.array([], dtype='int64')
     idxs = np.arange(len(labels))
 
     # sort labels
-    idxs_labels = np.vstack((idxs, labels))
-    idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()]
+    idxs_labels = np.vstack((idxs, labels))  # 수직으로 행렬 결합(2,:)와 같은 꼴이됨
+    idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()]  # 이 코드가 이해가 되지 않음. 당연히 정렬되어 있기 때문에 0 1 2 3 으로 가야하는데
+    # 얘는 왜 0 803 802 ,,, 이런식으로 가는건지 일단 seed 문제는 아닌듯함
     idxs = idxs_labels[0, :]
-    priorlist = []
+    priorlist = [] # unlabel data의 차지하는 비중
 
     # divide to unlabeled
     bias = 0
     for i in range(opt.num_classes):
         if samplesize[i] != 0:
-            if i in indexlist and samplesize[i]>=40:
+            if i in indexlist and samplesize[i] >= 40:
                 labeled = np.concatenate(
-                    (labeled, idxs[bias : int(bias + opt.positiveRate * samplesize[i])]), axis=0)
+                    (labeled, idxs[bias: int(bias + opt.positiveRate * samplesize[i])]), axis=0)
                 bias += int(opt.positiveRate * samplesize[i])
                 unlabeled = np.concatenate(
-                    (unlabeled, idxs[bias : int(bias + (1-opt.positiveRate) * samplesize[i])]), axis=0)
-                bias += int((1-opt.positiveRate) * samplesize[i])
+                    (unlabeled, idxs[bias: int(bias + (1 - opt.positiveRate) * samplesize[i])]), axis=0)
+                bias += int((1 - opt.positiveRate) * samplesize[i])
                 priorlist.append(samplesize[i] * (1 - opt.positiveRate) / unlabeled_size)
             else:
-                unlabeled = np.concatenate((unlabeled, idxs[bias : bias + samplesize[i]]), axis=0)
+                unlabeled = np.concatenate((unlabeled, idxs[bias: bias + samplesize[i]]), axis=0)
                 bias += samplesize[i]
                 priorlist.append(samplesize[i] / unlabeled_size)
         else:
             priorlist.append(0.0)
 
     return labeled, unlabeled, priorlist
+
 
 # -------------------------------------------------------------------------------------------------------
 # SPLIT DATA AMONG CLIENTS
@@ -195,10 +221,14 @@ def split_image_data(data, labels, n_clients=10, classes_per_client=10, shuffle=
     # sort for labels
     data_idcs = [[] for i in range(n_labels)]
     for j, label in enumerate(labels):
+        # 라벨 별로 data가 몇 번째에 있는지 인덱스 번호 저장
+        # 여기서 알아둬야 할꺼는 라벨별로 6000개씩 저장된게 아님 라벨 0은 5,923개 1은 6742개 이런식으로 저장됨
         data_idcs[label] += [j]
     if shuffle:
         for idcs in data_idcs:
             np.random.shuffle(idcs)
+        # 각 라벨 별로 인덱스 번호 저장한 것의 위치를 섞음
+        # 원래는 라벨 1의 인덱스 위치가 [1 2 3] 이였다면 shuffle을 통하여 [2 3 1] 이런식으로 섞임
 
     # split data among clients
     clients_split = []
@@ -225,12 +255,12 @@ def split_image_data(data, labels, n_clients=10, classes_per_client=10, shuffle=
             print(" - Client {}: {}".format(i, split))
         print()
 
-    if verbose:
+    if verbose:  # verbose : 장황한, 상세한
         print_split(clients_split)
     return clients_split
 
 
-def get_data_loaders(verbose=True):
+def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
     x_train, y_train, x_test, y_test = globals()['get_' + opt.dataset]()
     # dataset_train, dataset_test = globals()['get_' + opt.dataset]()
 
@@ -241,31 +271,36 @@ def get_data_loaders(verbose=True):
     split = split_image_data(x_train, y_train, n_clients=opt.num_clients,
                              classes_per_client=opt.classes_per_client,
                              verbose=verbose)
-
+    # 여기에서 각 client 별 데이터가 어떻식으로 들어가는지 정해짐
+    # Client 0 : [1200 1200 1200 1200 1200 0 0 0 0 0] 이 부분에서 결정됨
 
     train_dataset = []
     priorlist = []
-    indexlist = []  #防止返回值出错
+    indexlist = []  # 防止返回值出错 -> Prevention of return value errors
 
     count = 0
-    randomIndex_num = [4,4,3,3,2,2,1,1,1,1]
+    randomIndex_num = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
 
     for i, (x, y) in enumerate(split):
         indexList = []
         dataset = CustomImageDataset(x, y, transforms_train)
         selectcount = [0 * 1 for i in range(opt.num_classes)]
 
-        # 计算每一类的样本量
+        # 计算每一类的样本量 -> Calculate the sample size for each category
+        # 각 client 별로 라벨 당 데이터가 몇개씩 들어가 있는지 저장하는게 samplesize
         samplesize = [0 * 1 for i in range(opt.num_classes)]
         for l in dataset.labels:
             samplesize[l] += 1
-        if opt.P_Index_accordance:          # indexlist长度一致
+        if opt.P_Index_accordance:  # indexlist长度一致 -> Index list length is consistent
+            # default : opt.P_Index_accordance is False, P_Index_accordance가 나타내는게 뭔지 정확하게 파악 못함
             for j in range(opt.randomIndex_num):
                 k = 0
                 while True:
                     index = (count + j + k) % opt.num_classes
-                    if (i == (opt.num_clients - 1) or samplesize[index] > 40) and selectcount[index] < opt.randomIndex_num \
-                            and (sum(m==0 for m in selectcount)>(opt.num_classes-opt.classes_per_client) and index not in indexList):
+                    if (i == (opt.num_clients - 1) or samplesize[index] > 40) and selectcount[
+                        index] < opt.randomIndex_num \
+                            and (sum(m == 0 for m in selectcount) > (
+                            opt.num_classes - opt.classes_per_client) and index not in indexList):
                         indexList.append(index)
                         selectcount[index] += 1
                         break
@@ -273,11 +308,12 @@ def get_data_loaders(verbose=True):
                         break
                     k += 1
         else:
-            for j in range(randomIndex_num[i]):
+            for j in range(randomIndex_num[i]):  # 여기에서 각 client에 들어갈 라벨을 정해줌 (변수명 index를 사용하여)
                 k = 0
                 while True:
                     index = (count + j + k) % opt.num_classes
-                    if samplesize[index] > 40 and selectcount[index] < sum(randomIndex_num)/opt.num_classes and index not in indexList:
+                    if samplesize[index] > 40 and selectcount[index] < sum(
+                            randomIndex_num) / opt.num_classes and index not in indexList:
                         indexList.append(index)
                         selectcount[index] += 1
                         break
@@ -287,22 +323,24 @@ def get_data_loaders(verbose=True):
         label_dict, unlabel_dict, priorList = puSpilt_index(dataset, indexList, samplesize)
         priorlist.append(priorList)
         # convert to onehot for torch
-        li = [0]*opt.num_classes
+        li = [0] * opt.num_classes # li : label된 label이 무엇인지
         for i in indexList:
             li[i] = 1
         indexlist.append(li)
 
-        unlabel_dict = np.sort(unlabel_dict)  # dict序列排序
+        unlabel_dict = np.sort(unlabel_dict)  # dict序列排序 -> dict sequence ordering
         if 'SL' not in opt.method:
             dataset = relabel_K(dataset, unlabel_dict)  # 将挑出的unlabeled数据标签全部改为classnum-1
+            # -> Change all unlabeled data labels to classnum-1
         train_dataset.append(dataset)
         count += len(indexList)
 
-
-    print(indexlist)
+    print(indexlist)  # indexlist가 무엇인지 알아야 할듯
 
     client_loaders = [torch.utils.data.DataLoader(
-            data, batch_size=opt.pu_batchsize, num_workers=16, shuffle=True) for data in train_dataset]
+        data, batch_size=opt.pu_batchsize, num_workers=0, shuffle=True) for data in train_dataset]
+
+    # 여기로 파악되는데 num_workers = 16에서 0으로 수정했다고 하셨음
 
     stats = [x.shape[0] for x, y in split]
 
@@ -311,7 +349,6 @@ def get_data_loaders(verbose=True):
 
     return client_loaders, stats, test_loader, indexlist, priorlist
     # torch.Tensor(indexlist).cuda(), torch.Tensor(priorlist).cuda()
-
 
 
 def print_image_data_stats(data_train, labels_train, data_test, labels_test):
