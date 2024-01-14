@@ -260,6 +260,7 @@ class Client:
                 outputs = self.model(inputs)  # outputs 는 일단 다 구하고 loss를 구할때만 labeling으로 구분된 거만 반영
                 loss = self.ploss_my2(outputs, labels, global_logit)
                 if not torch.isnan(loss):
+                    # 여기서 loss가 줄어들지만 이걸 server로 모았을때 결과가 이상함
                     loss.backward()
                     self.optimizer_p.step()
                     total_loss.append(loss)
