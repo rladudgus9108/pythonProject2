@@ -6,7 +6,8 @@ def set_config(args):
     """
     #
     # scenarios
-    if 'FM' in args.task:  
+    if 'FM' in args.method:   # task 이지만 method로 가야하지 않을까
+        # default : args.task
         # FedMatch data spilt setting
         args.useFedmatchDataLoader = True
         args.bsize_s = 256
@@ -20,8 +21,16 @@ def set_config(args):
         args.percentage = 50  # chose from 0, 50, 90
         args.local_epochs = 10
 
-    if 'SL' not in args.method:
+    if 'SL' not in args.task: # default args.method
+        # 얘가 오히려 method가 아니라 task가 되어야 하지 않을까
         args.use_PULoss = True
+    else:
+        args.use_PULoss = False
+
+    """ default
+    if 'SL' not in args.method:
+        args.use_PULoss = True    
+    """
 
     return args
 

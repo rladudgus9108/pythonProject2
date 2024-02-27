@@ -21,7 +21,7 @@ class Cloud:
 
     def aggregate(self, clientSelect_idxs):
         totalsize = 0
-        samplesize = 500
+        samplesize = 500 # sampleSize가 뭘까
         for idx in clientSelect_idxs:
             totalsize += samplesize
 
@@ -79,7 +79,8 @@ class Cloud:
         total_accuracy = 100 * correct / len(self.test_loader.dataset)
         print('Current Round: {:d}, Total Accuracy: {:.4f} %'.format(cur_rounds, total_accuracy))
 
-        for label in label_total:
+        # 각 라벨별 정확도 출력
+        for label in sorted(label_correct.keys()):
             label_accuracy = 100 * label_correct[label] / label_total[label]
             print('Label {:d} Accuracy: {:.4f} %'.format(label, label_accuracy))
 

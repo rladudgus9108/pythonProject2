@@ -49,7 +49,7 @@ class CustomImageDataset(Dataset):
         return self.inputs.shape[0]
 
 
-def get_MNIST():
+def get_MNIST(): ##################################### 여기서 변경
     dataset_train = datasets.MNIST(root=opt.data_root, train=True, download=True,
                                    transform=get_default_data_transforms(opt.dataset, verbose=False)[0])
     dataset_test = datasets.MNIST(root=opt.data_root, train=False, download=True,
@@ -150,8 +150,8 @@ def relabel_K(dataset_train, unlabel_dict):
     count = 0
     for index, label in enumerate(dataset_train.labels):
         if count < len(unlabel_dict) and index == unlabel_dict[count]:
-            dataset_train.labels[index] += opt.num_classes # 여기에서 + 10을 해줌, unlabel 데이터로 만들기 위해서
-            count += 1 # 애초에 보면 dataset_train에 접근하여서 label 자체를 변경하는 구조 원래 1이 였다면 11으로 바꿈
+            dataset_train.labels[index] += opt.num_classes  # 여기에서 + 10을 해줌, unlabel 데이터로 만들기 위해서
+            count += 1  # 애초에 보면 dataset_train에 접근하여서 label 자체를 변경하는 구조 원래 1이 였다면 11으로 바꿈
     return dataset_train
 
 
@@ -174,11 +174,11 @@ def puSpilt_index(dataset, indexlist, samplesize):
     idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()]  # 이 코드가 이해가 되지 않음. 당연히 정렬되어 있기 때문에 0 1 2 3 으로 가야하는데
     # 얘는 왜 0 803 802 ,,, 이런식으로 가는건지 일단 seed 문제는 아닌듯함
     idxs = idxs_labels[0, :]
-    priorlist = [] # unlabel data의 차지하는 비중
+    priorlist = []  # unlabel data의 차지하는 비중
 
     # divide to unlabeled
     bias = 0
-    for i in range(opt.num_classes):
+    for i in range(opt.num_classes):  # ************ 여기가 문제 발생 구간 *******************
         if samplesize[i] != 0:
             if i in indexlist and samplesize[i] >= 40:
                 labeled = np.concatenate(
@@ -187,6 +187,50 @@ def puSpilt_index(dataset, indexlist, samplesize):
                 unlabeled = np.concatenate(
                     (unlabeled, idxs[bias: int(bias + (1 - opt.positiveRate) * samplesize[i])]), axis=0)
                 bias += int((1 - opt.positiveRate) * samplesize[i])
+                priorlist.append(samplesize[i] * (1 - opt.positiveRate) / unlabeled_size)
+            else:
+                unlabeled = np.concatenate((unlabeled, idxs[bias: bias + samplesize[i]]), axis=0)
+                bias += samplesize[i]
+                priorlist.append(samplesize[i] / unlabeled_size)
+        else:
+            priorlist.append(0.0)
+
+    return labeled, unlabeled, priorlist
+
+
+def puSpilt_index_my(dataset, indexlist, samplesize):
+    # label 과 unlabel data를 나누는 함수
+    labels = dataset.labels.numpy()
+
+    labeled_size = 0
+    for i in indexlist:
+        labeled_size += int(samplesize[i] * opt.positiveRate)
+    unlabeled_size = len(labels) - labeled_size
+
+    # l_shard = [i for i in range(int(singleClass * pos_rate))]
+    labeled = np.array([], dtype='int64')
+    unlabeled = np.array([], dtype='int64')
+    idxs = np.arange(len(labels))
+
+    # sort labels
+    idxs_labels = np.vstack((idxs, labels))  # 수직으로 행렬 결합(2,:)와 같은 꼴이됨
+    idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()]  # 이 코드가 이해가 되지 않음. 당연히 정렬되어 있기 때문에 0 1 2 3 으로 가야하는데
+    # 얘는 왜 0 803 802 ,,, 이런식으로 가는건지 일단 seed 문제는 아닌듯함
+    idxs = idxs_labels[0, :]
+    priorlist = []  # unlabel data의 차지하는 비중
+
+    # divide to unlabeled
+    bias = 0
+    for i in range(opt.num_classes):  # ************ 여기가 문제 발생 구간 *******************
+        if samplesize[i] != 0:
+            if i in indexlist and samplesize[i] >= 40:
+                labeled = np.concatenate(
+                    (labeled, idxs[bias: int(bias + opt.positiveRate * samplesize[i])]), axis=0)
+                bias += int(opt.positiveRate * samplesize[i])
+                unlabeled = np.concatenate(
+                    (unlabeled, idxs[bias: bias + samplesize[i] - int(opt.positiveRate * samplesize[i])]),
+                    axis=0) # unlabel에서 문제가 있었음
+                bias += (samplesize[i] - int(opt.positiveRate * samplesize[i]))
                 priorlist.append(samplesize[i] * (1 - opt.positiveRate) / unlabeled_size)
             else:
                 unlabeled = np.concatenate((unlabeled, idxs[bias: bias + samplesize[i]]), axis=0)
@@ -279,7 +323,11 @@ def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
     indexlist = []  # 防止返回值出错 -> Prevention of return value errors
 
     count = 0
-    randomIndex_num = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+    # randomIndex_num = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]  # default
+    # randomIndex_num = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    randomIndex_num = [4, 4, 3, 3, 2, 2, 1, 1, 1, 1]
+    # randomIndex_num = [2, 2, 2, 2, 2]
+    # randomIndex_num = [5,5]
 
     for i, (x, y) in enumerate(split):
         indexList = []
@@ -320,10 +368,10 @@ def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
                     elif k > opt.num_classes:
                         break
                     k += 1
-        label_dict, unlabel_dict, priorList = puSpilt_index(dataset, indexList, samplesize)
+        label_dict, unlabel_dict, priorList = puSpilt_index_my(dataset, indexList, samplesize)
         priorlist.append(priorList)
         # convert to onehot for torch
-        li = [0] * opt.num_classes # li : label된 label이 무엇인지
+        li = [0] * opt.num_classes  # li : label된 label이 무엇인지
         for i in indexList:
             li[i] = 1
         indexlist.append(li)
@@ -334,7 +382,7 @@ def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
             # -> Change all unlabeled data labels to classnum-1
         train_dataset.append(dataset)
         count += len(indexList)
-
+    print("IndexList")
     print(indexlist)  # indexlist가 무엇인지 알아야 할듯
 
     client_loaders = [torch.utils.data.DataLoader(

@@ -2,19 +2,29 @@ import torch
 from copy import deepcopy
 import torch.optim as optim
 from pylab import *
+import torch.nn as nn
+import torch.nn.functional as F
 
 from options import opt
 from options import FedAVG_aggregated_model_path
-from modules.loss import PLoss, MPULoss_V2, PLoss_my, PLoss_my2, PLoss_my3, PLoss_my4, PLoss_my5
+from modules.loss import PLoss, MPULoss_V2, PLoss_my, PLoss_my2, PLoss_my3, PLoss_my4, PLoss_my5, MPULoss_my
 from datasets.FMloader import DataLoader
 from datasets.dataSpilt import CustomImageDataset, get_default_data_transforms
 
 
-def adjust_learning_rate(optimizer, communication_round):
+def adjust_learning_rate_my(optimizer, communication_round):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    lr = opt.pu_lr * (0.992 ** (communication_round * opt.local_epochs // 20))
+    lr = opt.pu_lr * (0.995 ** (communication_round * opt.local_epochs // 1))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
+
+# default Setting
+# def adjust_learning_rate(optimizer, communication_round):
+#     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
+#     lr = opt.pu_lr * (0.992 ** (communication_round * opt.local_epochs // 20))
+#     for param_group in optimizer.param_groups:
+#         param_group['lr'] = lr
 
 
 def calculate_distance(output, global_logit):
@@ -37,7 +47,8 @@ class Client:
             self.loss = PLoss(opt.num_classes).cuda()
         else:
             # self.loss = MPULoss_INDEX(opt.num_classes, opt.pu_weight).cuda()
-            self.loss = MPULoss_V2(opt.num_classes, opt.pu_weight).cuda()
+            # self.loss = MPULoss_V2(opt.num_classes, opt.pu_weight).cuda()  # default
+            self.loss = MPULoss_my(opt.num_classes, opt.pu_weight).cuda()
 
         self.ploss = PLoss(opt.num_classes).cuda()
         self.ploss_my = PLoss_my(opt.num_classes).cuda()
@@ -49,9 +60,9 @@ class Client:
         self.indexlist = indexlist
         self.communicationRound = 0
         self.optimizer_pu = optim.SGD(self.model.parameters(), lr=opt.pu_lr, momentum=opt.momentum)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer_pu, step_size=1, gamma=0.992)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer_pu, step_size=1, gamma=0.995) # default : 0.992
         self.optimizer_p = optim.SGD(self.model.parameters(), lr=opt.pu_lr, momentum=opt.momentum)
-        self.scheduler_p = optim.lr_scheduler.StepLR(self.optimizer_p, step_size=1, gamma=0.992)
+        self.scheduler_p = optim.lr_scheduler.StepLR(self.optimizer_p, step_size=1, gamma=0.995) # default : 0.992
 
         if not opt.useFedmatchDataLoader:
             self.train_loader = trainloader
@@ -113,6 +124,36 @@ class Client:
     def train_fedavg_pu(self):
         self.model.train()
         total_loss = []
+
+        for epoch in range(opt.local_epochs):
+            for i, (inputs, labels) in enumerate(self.train_loader):
+                # print("training input img scale:", inputs.max(), inputs.min())
+                inputs = inputs.cuda()
+                labels = labels.cuda()
+                self.optimizer_pu.zero_grad()  # tidings清零
+                outputs = self.model(inputs)  # on cuda 0
+                # print(outputs.dtype, outputs.device)
+                print(self.model.state_dict())
+                print("경계")
+                loss, puloss, celoss = self.loss(outputs, labels, self.priorlist, self.indexlist)
+
+                # print("lr:", self.optimizer_pu.param_groups[-1]['lr'])
+                loss.backward()
+                self.optimizer_pu.step()
+                total_loss.append(loss)
+                print(self.model.state_dict())
+                print("경계")
+        total_loss_sum = sum(tensor.cpu().item() for tensor in total_loss)
+        print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, total_loss_sum / len(total_loss)))
+        # default : print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, (sum(total_loss) / len(total_loss)).item()))
+        # loss 계산을 self.loss()를 통해 하다보면 음수가 나올 수 있음
+        self.communicationRound += 1
+        self.scheduler.step()
+
+    def train_fedavg_pu_mod(self):
+        self.model.train()
+        total_loss = []
+
         for epoch in range(opt.local_epochs):
             for i, (inputs, labels) in enumerate(self.train_loader):
                 # print("training input img scale:", inputs.max(), inputs.min())
@@ -124,11 +165,71 @@ class Client:
 
                 loss, puloss, celoss = self.loss(outputs, labels, self.priorlist, self.indexlist)
                 # print("lr:", self.optimizer_pu.param_groups[-1]['lr'])
-                loss.backward()
-                total_loss.append(loss)
-                self.optimizer_pu.step()
-        print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, (sum(total_loss) / len(total_loss)).item()))
+                if not torch.isnan(loss):
+                    loss.backward()
+                    self.optimizer_pu.step()
+                    total_loss.append(loss)
 
+        total_loss_sum = sum(tensor.cpu().item() for tensor in total_loss)
+        print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, total_loss_sum / len(total_loss)))
+        # default : print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, (sum(total_loss) / len(total_loss)).item()))
+        # loss 계산을 self.loss()를 통해 하다보면 음수가 나올 수 있음
+        self.communicationRound += 1
+        self.scheduler.step()
+
+    def train_fedavg_pu_my(self):
+        self.model.train()
+        total_loss = []
+
+        for epoch in range(opt.local_epochs):
+            for i, (inputs, labels) in enumerate(self.train_loader):
+                # print("training input img scale:", inputs.max(), inputs.min())
+                inputs = inputs.cuda()
+                labels = labels.cuda()
+                self.optimizer_pu.zero_grad()  # tidings清零
+                outputs = self.model(inputs)  # on cuda 0
+                # print(outputs.dtype, outputs.device)
+
+                loss, puloss, celoss = self.loss(outputs, labels, self.priorlist, self.indexlist)
+
+                # print("lr:", self.optimizer_pu.param_groups[-1]['lr'])
+                if not torch.isnan(loss):
+                    loss.backward()
+                    self.optimizer_pu.step()
+                    total_loss.append(loss)
+
+        total_loss_sum = sum(tensor.cpu().item() for tensor in total_loss)
+        print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, total_loss_sum / len(total_loss)))
+        # default : print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, (sum(total_loss) / len(total_loss)).item()))
+        # loss 계산을 self.loss()를 통해 하다보면 음수가 나올 수 있음
+        self.communicationRound += 1
+        self.scheduler.step()
+
+    def train_fedavg_pu_my_2(self, global_logit):
+        self.model.train()
+        total_loss = []
+
+        for epoch in range(opt.local_epochs):
+            for i, (inputs, labels) in enumerate(self.train_loader):
+                # print("training input img scale:", inputs.max(), inputs.min())
+                inputs = inputs.cuda()
+                labels = labels.cuda()
+                self.optimizer_pu.zero_grad()  # tidings清零
+                outputs = self.model(inputs)  # on cuda 0
+                # print(outputs.dtype, outputs.device)
+
+                loss, puloss, celoss, reloss = self.loss(outputs, labels, self.priorlist, self.indexlist, global_logit)
+                # loss : 최종 loss, puloss : pu1 + pu2 + pu3, celoss : label된 데이터, reloss : pu4
+                # print("lr:", self.optimizer_pu.param_groups[-1]['lr'])
+                if not torch.isnan(loss):
+                    loss.backward()
+                    self.optimizer_pu.step()
+                    total_loss.append(loss)
+
+        total_loss_sum = sum(tensor.cpu().item() for tensor in total_loss)
+        print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, total_loss_sum / len(total_loss)))
+        # default : print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, (sum(total_loss) / len(total_loss)).item()))
+        # loss 계산을 self.loss()를 통해 하다보면 음수가 나올 수 있음
         self.communicationRound += 1
         self.scheduler.step()
 
@@ -165,7 +266,7 @@ class Client:
         self.model.train()
         total_loss = []
         if opt.adjust_lr:
-            adjust_learning_rate(self.optimizer_pu, self.communicationRound)
+            adjust_learning_rate_my(self.optimizer_pu, self.communicationRound)
         for epoch in range(epochs):
             for i, (inputs, labels) in enumerate(self.train_loader):
                 # print("training input img scale:", inputs.max(), inputs.min())
@@ -233,6 +334,7 @@ class Client:
                 self.optimizer_p.zero_grad()  # tidings清零
                 outputs = self.model(inputs)  # outputs 는 일단 다 구하고 loss를 구할때만 labeling으로 구분된 거만 반영
                 loss = self.ploss(outputs, labels)
+
                 if not torch.isnan(loss):
                     loss.backward()
                     self.optimizer_p.step()
@@ -247,8 +349,172 @@ class Client:
         self.communicationRound += 1
         self.scheduler_p.step()
 
+    def train_fedavg_p_mod_1(self):
+        self.model.train()
+        self.numClass = 10
+        total_loss = []
+        for epoch in range(opt.local_epochs):
+            for i, (inputs, labels) in enumerate(self.train_loader):
+                inputs = inputs.cuda()
+                labels = labels.cuda()
+                # import pdb; pdb.set_trace()
+                self.optimizer_p.zero_grad()  # tidings清零
+                outputs = self.model(inputs)  # outputs 는 일단 다 구하고 loss를 구할때만 labeling으로 구분된 거만 반영
+                outputs = outputs.cuda().float()
+                # P_mask 는 label이 되어 있는 데이터의 인덱스를 나타냄
+                P_mask = (labels <= self.numClass - 1).nonzero(as_tuple=False).view(-1)
+                labelsP = torch.index_select(labels, 0, P_mask).cuda()
+                outputsP = torch.index_select(outputs, 0, P_mask).cuda()
+
+                crossentropyloss = nn.CrossEntropyLoss().cuda()
+
+                loss = crossentropyloss(outputsP, labelsP)
+
+                if not torch.isnan(loss):
+                    loss.backward()
+                    self.optimizer_p.step()
+                    total_loss.append(loss)
+        # total_loss_sum은 내가 수정해서 구현한 부분
+        # default : print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, (sum(total_loss) / len(total_loss)).item()))
+        # 하지만 여기 출력 부분이 20 epoch마다 loss 평균이 얼마가 되는지 출력하는 부분으로 굳이 출력해야 되나 생각하여 주석 처리함
+
+        total_loss_sum = sum(tensor.cpu().item() for tensor in total_loss)
+        print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, total_loss_sum / len(total_loss)))
+
+        self.communicationRound += 1
+        self.scheduler_p.step()
+
+    def train_fedavg_p_mod_2(self, global_logit):
+        self.model.train()
+        self.numClass = 10
+
+        total_loss = []
+        alphaWeight = 0.5  # loss의 가중치
+        betaWeight = 0.5
+
+        # print(self.model.state_dict())
+        for epoch in range(opt.local_epochs):
+            for i, (inputs, labels) in enumerate(self.train_loader):
+                inputs = inputs.cuda()
+                labels = labels.cuda()
+                # import pdb; pdb.set_trace()
+                self.optimizer_p.zero_grad()  # tidings清零
+                outputs = self.model(inputs)  # outputs 는 일단 다 구하고 loss를 구할때만 labeling으로 구분된 거만 반영
+                outputs = outputs.cuda().float()
+
+                crossentropyloss = nn.CrossEntropyLoss().cuda()
+
+                P_mask = (labels <= self.numClass - 1).nonzero(as_tuple=False).view(-1)
+                labelsP = torch.index_select(labels, 0, P_mask).cuda()
+                outputsP = torch.index_select(outputs, 0, P_mask).cuda()
+                # 이 부분에 outputsP에 대해서 softmax를 취한 다음에 loss 를 구하게끔 수정하는 것
+                # 해볼만한 부분임
+
+                alphaLoss = crossentropyloss(outputsP, labelsP)
+
+                U_mask = (labels > self.numClass - 1).nonzero(as_tuple=False).view(-1)
+                outputsU = torch.index_select(outputs, 0, U_mask).cuda()
+
+                # 거리 계산
+                similarites = self.calculate_similarities(global_logit, outputsU)
+
+                max_similarities, max_indices = similarites.max(dim=1)
+
+                # 상위 10% 거리에 해당하는 인덱스를 선택
+                num_selected = int(len(max_similarities) * 0.1)  # 10%
+                top_distances_indices = max_similarities.topk(num_selected, largest=True)[1]
+
+                # 상위 10%에 해당하는 outputs와 labels만 선택
+                selected_outputs = outputsU[top_distances_indices]
+                selected_labels = max_indices[top_distances_indices]
+
+                # 이 부분에도 마찬가지로 selected_outputs에 대해서 softmax 를 취한 다음에 loss 계산하는 것 그 부분 반영해보기
+                betaLoss = crossentropyloss(selected_outputs, selected_labels)
+
+                loss = alphaWeight * alphaLoss + betaWeight * betaLoss
+
+                if not torch.isnan(loss):
+                    loss.backward()
+                    self.optimizer_p.step()
+                    total_loss.append(loss)
+        # total_loss_sum은 내가 수정해서 구현한 부분
+        # default : print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, (sum(total_loss) / len(total_loss)).item()))
+        # 하지만 여기 출력 부분이 20 epoch마다 loss 평균이 얼마가 되는지 출력하는 부분으로 굳이 출력해야 되나 생각하여 주석 처리함
+        print("_________________________________________")
+        # print(self.model.state_dict())
+        total_loss_sum = sum(tensor.cpu().item() for tensor in total_loss)
+        print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, total_loss_sum / len(total_loss)))
+
+        self.communicationRound += 1
+        self.scheduler_p.step()
+
+    def train_fedavg_p_mod_3(self, global_logit):
+        self.model.train()
+        self.numClass = 10
+
+        total_loss = []
+        # print(self.model.state_dict())
+        for epoch in range(opt.local_epochs):
+            for i, (inputs, labels) in enumerate(self.train_loader):
+                inputs = inputs.cuda()
+                labels = labels.cuda()
+                # import pdb; pdb.set_trace()
+                self.optimizer_p.zero_grad()  # tidings清零
+                outputs = self.model(inputs)  # outputs 는 일단 다 구하고 loss를 구할때만 labeling으로 구분된 거만 반영
+                outputs = outputs.cuda().float()
+
+                P_mask = (labels <= self.numClass - 1).nonzero(as_tuple=False).view(-1)
+                labelsP = torch.index_select(labels, 0, P_mask).cuda()
+                outputsP = torch.index_select(outputs, 0, P_mask).cuda()
+
+                U_mask = (labels > self.numClass - 1).nonzero(as_tuple=False).view(-1)
+                outputsU = torch.index_select(outputs, 0, U_mask).cuda()
+
+                # 거리 계산
+                similarites = self.calculate_similarities(global_logit, outputsU)
+
+                max_similarities, max_indices = similarites.max(dim=1)
+
+                # 상위 10% 거리에 해당하는 인덱스를 선택
+                num_selected = int(len(max_similarities) * 0.1)  # 10%
+                top_distances_indices = max_similarities.topk(num_selected, largest=True)[1]
+
+                # 상위 10%에 해당하는 outputs와 labels만 선택
+                selected_outputs = outputsU[top_distances_indices]
+                selected_labels = max_indices[top_distances_indices]
+
+                # 선택된 outputs와 labels를 기존의 outputsP와 labelsP에 추가
+                labels_combined = torch.cat([labelsP, selected_labels], dim=0)
+                outputs_combined = torch.cat([outputsP, selected_outputs], dim=0)
+
+                crossentropyloss = nn.CrossEntropyLoss().cuda()
+                loss = crossentropyloss(outputs_combined, labels_combined)
+
+                if not torch.isnan(loss):
+                    loss.backward()
+                    self.optimizer_p.step()
+                    total_loss.append(loss)
+        # total_loss_sum은 내가 수정해서 구현한 부분
+        # default : print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, (sum(total_loss) / len(total_loss)).item()))
+        # 하지만 여기 출력 부분이 20 epoch마다 loss 평균이 얼마가 되는지 출력하는 부분으로 굳이 출력해야 되나 생각하여 주석 처리함
+        print("_________________________________________")
+        # print(self.model.state_dict())
+        total_loss_sum = sum(tensor.cpu().item() for tensor in total_loss)
+        print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, total_loss_sum / len(total_loss)))
+
+        self.communicationRound += 1
+        self.scheduler_p.step()
+
+    def calculate_similarities(self, logits, outputs):
+        similarities = []
+        for logit in logits:
+            similarity = F.cosine_similarity(logit, outputs, dim=1)
+            similarities.append(similarity)
+        return torch.stack(similarities, dim=1)
+
     def train_fedavg_p_my2(self, global_logit):
         # print(global_logit) # 제대로 전달받음
+        # print(self.model.state_dict())
         self.model.train()
         total_loss = []
         for epoch in range(opt.local_epochs):
@@ -264,6 +530,8 @@ class Client:
                     loss.backward()
                     self.optimizer_p.step()
                     total_loss.append(loss)
+                print("_______________________")
+        # print(self.model.state_dict())
 
         # total_loss_sum은 내가 수정해서 구현한 부분
         # default : print('mean loss of {} epochs: {:.4f}'.format(opt.local_epochs, (sum(total_loss) / len(total_loss)).item()))
@@ -338,7 +606,7 @@ class Client:
     def send_logit(self):
         self.model.eval()
         unique_indices = torch.nonzero(self.indexlist).flatten()
-
+        temperature = 0.4
         outputs_accumulator = {int(index.item()): [] for index in unique_indices}
         with torch.no_grad():
             for i, (inputs, labels) in enumerate(self.train_loader):
@@ -347,7 +615,9 @@ class Client:
                 for input, label in zip(inputs, labels):
                     if label.item() in unique_indices:
                         output = self.model(input.unsqueeze(0))
-                        outputs_accumulator[label.item()].append(output)
+                        output_softmax = F.softmax(output / temperature, dim=1)
+
+                        outputs_accumulator[label.item()].append(output_softmax)
 
         # counts = {} # 각각 120개씩 들어가는거 확인
         # for key in outputs_accumulator:

@@ -2,8 +2,10 @@ from options import opt
 from config import set_config
 from modules.model import CNNMnist, ResNet9
 from roles.FmpuTrainer import FmpuTrainer
+import torch.nn as nn
 
 import os
+
 import torch
 import random
 import numpy as np
@@ -17,6 +19,7 @@ def set_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
 
 
 def main():
@@ -35,4 +38,6 @@ def main():
 
 if __name__ == '__main__':
     # merge config
+    print(opt.positiveRate)
+    print(opt.seed)
     main()
