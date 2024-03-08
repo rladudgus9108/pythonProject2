@@ -70,7 +70,7 @@ class FmpuTrainer:
                 self.clients_train_step_SL()
             else:
                 print("##### Semi-supervised setting #####")
-                self.clients_train_step_SS_my_2()  # memery up
+                self.clients_train_step_SS()  # memery up
 
             self.cloud.aggregate(self.clientSelect_idxs)
             acc_per_round.append(self.cloud.validation(t))
@@ -172,7 +172,7 @@ class FmpuTrainer:
             client_logit_store = []
             for idx in self.clientSelect_idxs:
                 self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
-                client_logit_store.append(self.clients[idx].send_logit())
+                client_logit_store.append(self.clients[idx].send_logit_range())
 
             global_logit = self.cloud.calculate_global_logit(client_logit_store)
 

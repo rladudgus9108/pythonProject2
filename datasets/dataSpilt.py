@@ -5,6 +5,7 @@ from torch.utils.data.dataset import Dataset
 from torchvision import datasets, transforms
 
 from options import opt
+import matplotlib.pyplot as plt
 
 
 class DatasetSplit(Dataset):
@@ -49,7 +50,7 @@ class CustomImageDataset(Dataset):
         return self.inputs.shape[0]
 
 
-def get_MNIST(): ##################################### 여기서 변경
+def get_MNIST():  ##################################### 여기서 변경
     dataset_train = datasets.MNIST(root=opt.data_root, train=True, download=True,
                                    transform=get_default_data_transforms(opt.dataset, verbose=False)[0])
     dataset_test = datasets.MNIST(root=opt.data_root, train=False, download=True,
@@ -67,26 +68,27 @@ def get_MNIST(): ##################################### 여기서 변경
     return dataset_train.train_data.numpy(), dataset_train.train_labels.numpy(), dataset_test.test_data.numpy(), dataset_test.test_labels.numpy()
 
 
-"""
-dataset_train print하면
-Dataset MNIST
-    Number of datapoints: 60000
-    Root location: ./data/
-    Split: Train
-    StandardTransform
-Transform: Compose(
-               ToPILImage()
-               ToTensor()
-               Normalize(mean=(0.1307,), std=(0.3081,))
-           )
-"""
+def get_FMNIST():  ##################################### 여기서 변경
+    dataset_train = datasets.FashionMNIST(root=opt.data_root, train=True, download=True,
+                                          transform=get_default_data_transforms(opt.dataset, verbose=False)[0])
+    dataset_test = datasets.FashionMNIST(root=opt.data_root, train=False, download=True,
+                                         transform=get_default_data_transforms(opt.dataset, verbose=False)[1])
+
+    return dataset_train.train_data.numpy(), dataset_train.train_labels.numpy(), dataset_test.test_data.numpy(), dataset_test.test_labels.numpy()
 
 
 def get_CIFAR10():
     '''Return CIFAR10 train/test data and labels as numpy arrays'''
-    data_train = datasets.CIFAR10(root=opt.data_root, train=True, download=True)
+    data_train = datasets.CIFAR10(root=opt.data_root, train=True, download=True)  # default
     data_test = datasets.CIFAR10(root=opt.data_root, train=False, download=True)
-    #
+
+    # 아래 있는 코드로 해도 동일한 결과 나옴 transform을 안되어 있어서 한번 해봄
+    # data_train = datasets.CIFAR10(root=opt.data_root, train=True, download=True,
+    #                               transform=get_default_data_transforms(opt.dataset, verbose=False)[0])
+    # data_test = datasets.CIFAR10(root=opt.data_root, train=False, download=True,
+    #                              transform=get_default_data_transforms(opt.dataset, verbose=False)[1])
+
+    # 원래 주석
     # x_train, y_train = data_train.train_data.transpose((0, 3, 1, 2)), np.array(data_train.train_labels)
     # x_test, y_test = data_test.test_data.transpose((0, 3, 1, 2)), np.array(data_test.test_labels)
 
@@ -96,6 +98,19 @@ def get_CIFAR10():
     return x_train, y_train, x_test, y_test
 
 
+def get_SVHN():
+    data_train = datasets.SVHN(root=opt.data_root, split='train', download=True,
+                               transform=get_default_data_transforms(opt.dataset, verbose=False)[0])
+    data_test = datasets.SVHN(root=opt.data_root, split='test', download=True,
+                              transform=get_default_data_transforms(opt.dataset, verbose=False)[1])
+
+    x_train, y_train = data_train.data, np.array(data_train.labels)
+    x_test, y_test = data_test.data, np.array(data_test.labels)
+
+    return x_train, y_train, x_test, y_test
+
+
+# 수정함, 다른 dataset에 맞게끔 transform을 바꿈
 def get_default_data_transforms(name, train=True, verbose=True):
     transforms_train = {
         # 'MNIST': transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]),
@@ -104,16 +119,24 @@ def get_default_data_transforms(name, train=True, verbose=True):
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,))
         ]),
-        'FashionMNIST': transforms.Compose([
+        'FMNIST': transforms.Compose([
             transforms.ToPILImage(),
-            # transforms.Resize((32, 32)),
-            # transforms.RandomCrop(32, padding=4),
             transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))
+            transforms.Normalize((0.2860,), (0.3530,))
+            # FashionMNIST
+            # 0.2860405969887955     -> 0.2860
+            # 0.3530242445149223     -> 0.3530
+        ]),
+        'SVHN': transforms.Compose([
+            transforms.ToPILImage(),  # 이 부분을 제외하고는 동일함
+            transforms.RandomCrop(32, padding=4),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[x / 255.0 for x in [109.9, 109.7, 113.8]],
+                                 std=[x / 255.0 for x in [50.1, 50.6, 50.8]])
         ]),
         'CIFAR10': transforms.Compose([
             transforms.ToPILImage(),
-            transforms.RandomCrop(32, padding=4),
+            transforms.RandomCrop(32, padding=4), # 일반화 성능 향상을 위하여 실행함
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
@@ -125,11 +148,16 @@ def get_default_data_transforms(name, train=True, verbose=True):
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,))
         ]),
-        'FashionMNIST': transforms.Compose([
+        'FMNIST': transforms.Compose([
             transforms.ToPILImage(),
-            # transforms.Resize((3，32, 32)),
             transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))
+            transforms.Normalize((0.2860,), (0.3530,))
+        ]),
+        'SVHN': transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[x / 255.0 for x in [109.9, 109.7, 113.8]],
+                                 std=[x / 255.0 for x in [50.1, 50.6, 50.8]])
         ]),
         'CIFAR10': transforms.Compose([
             transforms.ToPILImage(),
@@ -229,7 +257,7 @@ def puSpilt_index_my(dataset, indexlist, samplesize):
                 bias += int(opt.positiveRate * samplesize[i])
                 unlabeled = np.concatenate(
                     (unlabeled, idxs[bias: bias + samplesize[i] - int(opt.positiveRate * samplesize[i])]),
-                    axis=0) # unlabel에서 문제가 있었음
+                    axis=0)  # unlabel에서 문제가 있었음
                 bias += (samplesize[i] - int(opt.positiveRate * samplesize[i]))
                 priorlist.append(samplesize[i] * (1 - opt.positiveRate) / unlabeled_size)
             else:
@@ -323,9 +351,9 @@ def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
     indexlist = []  # 防止返回值出错 -> Prevention of return value errors
 
     count = 0
-    # randomIndex_num = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]  # default
+    randomIndex_num = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]  # default
     # randomIndex_num = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-    randomIndex_num = [4, 4, 3, 3, 2, 2, 1, 1, 1, 1]
+    # randomIndex_num = [4, 4, 3, 3, 2, 2, 1, 1, 1, 1]
     # randomIndex_num = [2, 2, 2, 2, 2]
     # randomIndex_num = [5,5]
 

@@ -3,29 +3,30 @@ import argparse
 parser = argparse.ArgumentParser()
 
 # seed 고정을 위한 코드
-parser.add_argument('--seed', type=int, default=4, help='random seed')
+parser.add_argument('--seed', type=int, default=0, help='random seed')
 # optimizer
-parser.add_argument('--pu_lr', type=float, default=0.01, help='learning rate of each client')
+parser.add_argument('--pu_lr', type=float, default=0.01, help='learning rate of each client')  # default: 0.01
 parser.add_argument('--adjust_lr', action='store_true', default=True,
                     help='adjust lr according to communication rounds')
 parser.add_argument('--pu_batchsize', type=int, default=100, help='batchsize of dataloader')  # default : 500
 parser.add_argument('--momentum', type=float, default=0.5, help='optimizer param')  # default : 0.9
 # dataset
-parser.add_argument('--dataset', type=str, default='MNIST')
+parser.add_argument('--dataset', type=str, default='SVHN', help='dataset')
+# MNIST, FMNIST, CIFAR10, SVHN
 # parser.add_argument('--dataset', type=str, default='CIFAR10') MNIST
-parser.add_argument('--data_root', type=str, default='./data/')
-parser.add_argument('--num_classes', type=int, default=10)
+parser.add_argument('--data_root', type=str, default='./data/',help='data store root')
+parser.add_argument('--num_classes', type=int, default=10, help='number of classes used in dataset')
 # PU param
 parser.add_argument('--pu_weight', type=float, default=1, help='weight of puloss')  # 1
 parser.add_argument('--local_epochs', type=int, default=1, help='epoches of each client')  # default : 20
 
 # pu dataloader
 parser.add_argument('--randomIndex_num', type=int, default=2, help='rate of positive sample')
-parser.add_argument('--P_Index_accordance', action='store_true', help='the same positive class index number') # default
+parser.add_argument('--P_Index_accordance', action='store_true', help='the same positive class index number')  # default
 parser.add_argument('--positiveRate', type=float, default=0.01, help='rate of positive sample')
 # default : 0.33
 # use Fedmatch dataloader
-parser.add_argument('--task', type=str, default='SS')  # default : FedPU
+parser.add_argument('--task', type=str, default='SL')  # default : FedPU
 parser.add_argument('--useFedmatchDataLoader', action='store_true',
                     help='the same positive class index number')
 parser.add_argument('--method', type=str, default='FedAvg')  # default : FedAvg

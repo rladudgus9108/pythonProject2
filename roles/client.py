@@ -47,8 +47,8 @@ class Client:
             self.loss = PLoss(opt.num_classes).cuda()
         else:
             # self.loss = MPULoss_INDEX(opt.num_classes, opt.pu_weight).cuda()
-            # self.loss = MPULoss_V2(opt.num_classes, opt.pu_weight).cuda()  # default
-            self.loss = MPULoss_my(opt.num_classes, opt.pu_weight).cuda()
+            self.loss = MPULoss_V2(opt.num_classes, opt.pu_weight).cuda()  # default
+            # self.loss = MPULoss_my(opt.num_classes, opt.pu_weight).cuda()
 
         self.ploss = PLoss(opt.num_classes).cuda()
         self.ploss_my = PLoss_my(opt.num_classes).cuda()
@@ -60,9 +60,9 @@ class Client:
         self.indexlist = indexlist
         self.communicationRound = 0
         self.optimizer_pu = optim.SGD(self.model.parameters(), lr=opt.pu_lr, momentum=opt.momentum)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer_pu, step_size=1, gamma=0.995) # default : 0.992
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer_pu, step_size=1, gamma=0.995)  # default : 0.992
         self.optimizer_p = optim.SGD(self.model.parameters(), lr=opt.pu_lr, momentum=opt.momentum)
-        self.scheduler_p = optim.lr_scheduler.StepLR(self.optimizer_p, step_size=1, gamma=0.995) # default : 0.992
+        self.scheduler_p = optim.lr_scheduler.StepLR(self.optimizer_p, step_size=1, gamma=0.995)  # default : 0.992
 
         if not opt.useFedmatchDataLoader:
             self.train_loader = trainloader
@@ -618,6 +618,56 @@ class Client:
                         output_softmax = F.softmax(output / temperature, dim=1)
 
                         outputs_accumulator[label.item()].append(output_softmax)
+
+        # counts = {} # 각각 120개씩 들어가는거 확인
+        # for key in outputs_accumulator:
+        #     counts[key] = len(outputs_accumulator[key])
+        # print(counts)
+        return outputs_accumulator
+
+    def send_logit_std(self):
+        self.model.eval()
+        unique_indices = torch.nonzero(self.indexlist).flatten()
+        # temperature = 1.0
+        outputs_accumulator = {int(index.item()): [] for index in unique_indices}
+        with torch.no_grad():
+            for i, (inputs, labels) in enumerate(self.train_loader):
+                inputs, labels = inputs.cuda(), labels.cuda()
+
+                for input, label in zip(inputs, labels):
+                    if label.item() in unique_indices:
+                        output = self.model(input.unsqueeze(0))
+                        output_std = output.std().item()
+                        output_softmax = F.softmax(output / output_std, dim=1)
+
+                        outputs_accumulator[label.item()].append(output_softmax)
+
+        # counts = {} # 각각 120개씩 들어가는거 확인
+        # for key in outputs_accumulator:
+        #     counts[key] = len(outputs_accumulator[key])
+        # print(counts)
+        return outputs_accumulator
+
+    def send_logit_range(self):
+        self.model.eval()
+        unique_indices = torch.nonzero(self.indexlist).flatten()
+        area = 5.0  # 0 : 실행되면 안됨, 1 : 0.1, 2 : 0.1, 0.2
+        outputs_accumulator = {int(index.item()): [] for index in unique_indices}
+        with torch.no_grad():
+            for i, (inputs, labels) in enumerate(self.train_loader):
+                inputs, labels = inputs.cuda(), labels.cuda()
+
+                for input, label in zip(inputs, labels):
+                    if label.item() in unique_indices:
+                        output = self.model(input.unsqueeze(0))
+                        output_range = torch.zeros(1, 10).cuda()
+                        for i in range(int(area)):
+                            output_softmax = F.softmax(output / ((i + 1) / 10), dim=1)
+                            output_range += output_softmax
+
+                        output_range = output_range / area
+
+                        outputs_accumulator[label.item()].append(output_range)
 
         # counts = {} # 각각 120개씩 들어가는거 확인
         # for key in outputs_accumulator:

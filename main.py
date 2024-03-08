@@ -1,6 +1,6 @@
 from options import opt
 from config import set_config
-from modules.model import CNNMnist, ResNet9
+from modules.model import CNNMnist, ResNet9, ResNet18, ResNet34, ResNet
 from roles.FmpuTrainer import FmpuTrainer
 import torch.nn as nn
 
@@ -33,6 +33,13 @@ def main():
     if opt.dataset == 'CIFAR10':
         model = ResNet9().cuda()
         trainer = FmpuTrainer(model)
+    if opt.dataset == 'FMNIST':
+        model = CNNMnist().cuda()
+        trainer = FmpuTrainer(model)
+    if opt.dataset == 'SVHN':
+        model = ResNet9().cuda()
+        trainer = FmpuTrainer(model)
+
     trainer.begin_train()
 
 

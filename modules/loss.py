@@ -423,7 +423,7 @@ class MPULoss_V2(nn.Module):
         crossentropyloss = nn.CrossEntropyLoss()
         crossloss = crossentropyloss(outputsP, labelsP)
 
-        objective = PULoss * self.puW + crossloss
+        objective = 1 * PULoss * self.puW + crossloss * 1
         # objective = abs(PULoss * self.puW + crossloss) 절대값을 취해서 실행도 시켜보는중
         # loss 계산에 따라서 더해지는 값이 음수가 크게 반환될 경우 total_loss에 저장되는 loss가 음수일수 있다
         # 그 때를 방지하고자 loss가 아예 음수가 되는 것을 여기서 방지하고 들어가는 것을 실행중
@@ -515,7 +515,7 @@ class MPULoss_my(nn.Module):  # 여기만 고쳐서 진행하면됨
         crossloss = crossentropyloss(outputsP, labelsP)
 
         # 최종 손실 계산
-        objective = 2 * PULoss * self.puW + 1 * crossloss + 1 * pu4_loss
+        objective = 2 * PULoss * self.puW + 2 * crossloss + 1 * pu4_loss
 
         return objective, PULoss * self.puW, crossloss, pu4_loss
         # return 바꿔야됨 임시로 저렇게만 해놓음
