@@ -136,7 +136,7 @@ def get_default_data_transforms(name, train=True, verbose=True):
         ]),
         'CIFAR10': transforms.Compose([
             transforms.ToPILImage(),
-            transforms.RandomCrop(32, padding=4), # 일반화 성능 향상을 위하여 실행함
+            transforms.RandomCrop(32, padding=4),  # 일반화 성능 향상을 위하여 실행함
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]),
@@ -332,6 +332,81 @@ def split_image_data(data, labels, n_clients=10, classes_per_client=10, shuffle=
     return clients_split
 
 
+def split_image_data_my(data, labels, n_clients=10, classes_per_client=10, shuffle=True, verbose=True):
+    '''
+    Splits (data, labels) evenly among 'n_clients s.t. every client holds 'classes_per_client
+    different labels
+    data : [n_data x shape]
+    labels : [n_data (x 1)] from 0 to n_labels
+    '''
+    n_data = len(data)
+    n_labels = np.max(labels) + 1
+
+    count_data = [0] * n_labels
+    for i in range(len(labels)):
+        for j in range(n_labels):
+            if labels[i] == j:
+                count_data[j] += 1
+                break
+
+    namuzi = n_data - (n_data // n_clients) * (n_clients - 1)
+
+    data_per_clients = [n_data // n_clients] * (n_clients - 1)
+    data_per_clients.append(namuzi) # data_per_clients : 각 클라이언트가 가질 총 데이터 수
+    # data_per_client = [n_data // n_clients] * n_clients
+
+    count_label = [0] * n_labels
+    for i in range(n_labels):
+        count_label[i] = count_data[i] // classes_per_client
+    # count_label : default로 10개 들어간다고 하면 최소 들어가야 되는 개수
+    data_per_client_per_class = count_label
+
+    if sum(data_per_clients) > n_data:
+        print("Impossible Split")
+        exit()
+
+    # sort for labels
+    data_idcs = [[] for i in range(n_labels)]
+    for j, label in enumerate(labels):
+        # 라벨 별로 data가 몇 번째에 있는지 인덱스 번호 저장
+        # 여기서 알아둬야 할꺼는 라벨별로 6000개씩 저장된게 아님 라벨 0은 5,923개 1은 6742개 이런식으로 저장됨
+        data_idcs[label] += [j]
+    if shuffle:
+        for idcs in data_idcs:
+            np.random.shuffle(idcs)
+        # 각 라벨 별로 인덱스 번호 저장한 것의 위치를 섞음
+        # 원래는 라벨 1의 인덱스 위치가 [1 2 3] 이였다면 shuffle을 통하여 [2 3 1] 이런식으로 섞임
+
+    # split data among clients
+    clients_split = []
+    c = 0
+    for i in range(n_clients):
+        client_idcs = []
+        budget = data_per_clients[i]
+        c = max(c, 0)
+        while budget > 0:
+            take = min(data_per_client_per_class[c], len(data_idcs[c]), budget)
+
+            client_idcs += data_idcs[c][:take]
+            data_idcs[c] = data_idcs[c][take:]
+
+            budget -= take
+            c = (c + 1) % n_labels
+
+        clients_split += [(data[client_idcs], labels[client_idcs])]
+
+    def print_split(clients_split):
+        print("Data split:")
+        for i, client in enumerate(clients_split):
+            split = np.sum(client[1].reshape(1, -1) == np.arange(n_labels).reshape(-1, 1), axis=1)
+            print(" - Client {}: {}".format(i, split))
+        print()
+
+    if verbose:  # verbose : 장황한, 상세한
+        print_split(clients_split)
+    return clients_split
+
+
 def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
     x_train, y_train, x_test, y_test = globals()['get_' + opt.dataset]()
     # dataset_train, dataset_test = globals()['get_' + opt.dataset]()
@@ -340,9 +415,9 @@ def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
     test_loader = torch.utils.data.DataLoader(CustomImageDataset(x_test, y_test, transforms_eval),
                                               batch_size=opt.pu_batchsize, shuffle=True)
 
-    split = split_image_data(x_train, y_train, n_clients=opt.num_clients,
-                             classes_per_client=opt.classes_per_client,
-                             verbose=verbose)
+    split = split_image_data_my(x_train, y_train, n_clients=opt.num_clients, # 여기서 변경
+                                classes_per_client=opt.classes_per_client,
+                                verbose=verbose)
     # 여기에서 각 client 별 데이터가 어떻식으로 들어가는지 정해짐
     # Client 0 : [1200 1200 1200 1200 1200 0 0 0 0 0] 이 부분에서 결정됨
 
@@ -356,6 +431,7 @@ def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
     # randomIndex_num = [4, 4, 3, 3, 2, 2, 1, 1, 1, 1]
     # randomIndex_num = [2, 2, 2, 2, 2]
     # randomIndex_num = [5,5]
+    # randomIndex_num = [2, 2, 2, 2, 2, 2, 2, 2]
 
     for i, (x, y) in enumerate(split):
         indexList = []

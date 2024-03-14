@@ -21,12 +21,13 @@ parser.add_argument('--pu_weight', type=float, default=1, help='weight of puloss
 parser.add_argument('--local_epochs', type=int, default=1, help='epoches of each client')  # default : 20
 
 # pu dataloader
-parser.add_argument('--randomIndex_num', type=int, default=2, help='rate of positive sample')
+parser.add_argument('--randomIndex_num', type=int, default=1, help='rate of positive sample')
 parser.add_argument('--P_Index_accordance', action='store_true', help='the same positive class index number')  # default
 parser.add_argument('--positiveRate', type=float, default=0.01, help='rate of positive sample')
+# 여기를 변경하면서 실험중, CIFAR10에서 labeling이 어떨때 높게 나오는지를 확인하기 위해서
 # default : 0.33
 # use Fedmatch dataloader
-parser.add_argument('--task', type=str, default='SL')  # default : FedPU
+parser.add_argument('--task', type=str, default='SS')  # default : FedPU
 parser.add_argument('--useFedmatchDataLoader', action='store_true',
                     help='the same positive class index number')
 parser.add_argument('--method', type=str, default='FedAvg')  # default : FedAvg

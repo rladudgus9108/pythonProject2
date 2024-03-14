@@ -87,6 +87,7 @@ class FmpuTrainer:
         self.clientSelect_idxs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # default
         # self.clientSelect_idxs = [0, 1, 2, 3, 4]
         # self.clientSelect_idxs = [0, 1]
+        # self.clientSelect_idxs = [0 ,1, 2, 3, 4, 5, 6, 7, 8]
 
     def clients_train_step_SS(self):
         if 'FedProx' in opt.method:
@@ -172,7 +173,7 @@ class FmpuTrainer:
             client_logit_store = []
             for idx in self.clientSelect_idxs:
                 self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
-                client_logit_store.append(self.clients[idx].send_logit_range())
+                client_logit_store.append(self.clients[idx].send_logit())
 
             global_logit = self.cloud.calculate_global_logit(client_logit_store)
 

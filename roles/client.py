@@ -606,7 +606,7 @@ class Client:
     def send_logit(self):
         self.model.eval()
         unique_indices = torch.nonzero(self.indexlist).flatten()
-        temperature = 0.4
+        temperature = 0.1
         outputs_accumulator = {int(index.item()): [] for index in unique_indices}
         with torch.no_grad():
             for i, (inputs, labels) in enumerate(self.train_loader):
