@@ -27,10 +27,9 @@ def set_config(args):
     else:
         args.use_PULoss = False
 
-    """ default
-    if 'SL' not in args.method:
-        args.use_PULoss = True    
-    """
+    # default
+    # if 'SL' not in args.method:
+    #     args.use_PULoss = True
 
     return args
 

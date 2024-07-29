@@ -252,7 +252,7 @@ def puSpilt_index_my(dataset, indexlist, samplesize):
     for i in range(opt.num_classes):  # ************ 여기가 문제 발생 구간 *******************
         if samplesize[i] != 0:
             if i in indexlist and samplesize[i] >= 40:
-                labeled = np.concatenate(
+                labeled = np.concatenate(       # 여기서 labeled 크기가 samplesize[i] 만큼 곱해져서 데이터 분포 문제 발생
                     (labeled, idxs[bias: int(bias + opt.positiveRate * samplesize[i])]), axis=0)
                 bias += int(opt.positiveRate * samplesize[i])
                 unlabeled = np.concatenate(
@@ -268,6 +268,50 @@ def puSpilt_index_my(dataset, indexlist, samplesize):
             priorlist.append(0.0)
 
     return labeled, unlabeled, priorlist
+
+# def puSpilt_index_my_test(dataset, indexlist, samplesize):
+#     # label 과 unlabel data를 나누는 함수
+#     labels = dataset.labels.numpy()
+#     total_size = sum(samplesize)
+#     percentage = 0.1
+#     labeled_size = 0
+#     for i in indexlist:
+#         labeled_size += int(total_size * opt.positiveRate * percentage)
+#     unlabeled_size = len(labels) - labeled_size
+#
+#     # l_shard = [i for i in range(int(singleClass * pos_rate))]
+#     labeled = np.array([], dtype='int64')
+#     unlabeled = np.array([], dtype='int64')
+#     idxs = np.arange(len(labels))
+#
+#     # sort labels
+#     idxs_labels = np.vstack((idxs, labels))  # 수직으로 행렬 결합(2,:)와 같은 꼴이됨
+#     idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()]  # 이 코드가 이해가 되지 않음. 당연히 정렬되어 있기 때문에 0 1 2 3 으로 가야하는데
+#     # 얘는 왜 0 803 802 ,,, 이런식으로 가는건지 일단 seed 문제는 아닌듯함
+#     idxs = idxs_labels[0, :]
+#     priorlist = []  # unlabel data의 차지하는 비중
+#     # divide to unlabeled
+#     bias = 0
+#
+#     for i in range(opt.num_classes):  # ************ 여기가 문제 발생 구간 *******************
+#         if samplesize[i] != 0:
+#             if i in indexlist and samplesize[i] >= 40:
+#                 labeled = np.concatenate(
+#                     (labeled, idxs[bias: int(bias + opt.positiveRate * total_size * percentage)]), axis=0)
+#                 bias += int(opt.positiveRate * total_size * percentage)
+#                 unlabeled = np.concatenate(
+#                     (unlabeled, idxs[bias: bias + samplesize[i] - int(opt.positiveRate * total_size * percentage)]),
+#                     axis=0)  # unlabel에서 문제가 있었음
+#                 bias += (samplesize[i] - int(opt.positiveRate * total_size * percentage))
+#                 priorlist.append(samplesize[i] * (1 - opt.positiveRate) / unlabeled_size)
+#             else:
+#                 unlabeled = np.concatenate((unlabeled, idxs[bias: bias + samplesize[i]]), axis=0)
+#                 bias += samplesize[i]
+#                 priorlist.append(samplesize[i] / unlabeled_size)
+#         else:
+#             priorlist.append(0.0)
+#
+#     return labeled, unlabeled, priorlist
 
 
 # -------------------------------------------------------------------------------------------------------
@@ -430,8 +474,16 @@ def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
     # randomIndex_num = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
     # randomIndex_num = [4, 4, 3, 3, 2, 2, 1, 1, 1, 1]
     # randomIndex_num = [2, 2, 2, 2, 2]
-    # randomIndex_num = [5,5]
+    # randomIndex_num = [5, 5]
     # randomIndex_num = [2, 2, 2, 2, 2, 2, 2, 2]
+    # randomIndex_num = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+    # randomIndex_num = [4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+    # randomIndex_num = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+    # randomIndex_num = [6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
+    # randomIndex_num = [7, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+    # randomIndex_num = [8, 8, 8, 8, 8, 8, 8, 8, 8, 8]
+    # randomIndex_num = [9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
+    # randomIndex_num = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
 
     for i, (x, y) in enumerate(split):
         indexList = []
@@ -473,6 +525,10 @@ def get_data_loaders(verbose=True):  # verbose : 상세한, 장황한
                         break
                     k += 1
         label_dict, unlabel_dict, priorList = puSpilt_index_my(dataset, indexList, samplesize)
+        # print(label_dict) # label_dict은 label 데이터에 들어가는 원래 dataset에서의 label 인덱스, ndaary type
+        # for i in label_dict:
+        #     print(dataset[i][1])
+        # print("client seperate line")
         priorlist.append(priorList)
         # convert to onehot for torch
         li = [0] * opt.num_classes  # li : label된 label이 무엇인지

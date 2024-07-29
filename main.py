@@ -10,6 +10,9 @@ import torch
 import random
 import numpy as np
 
+from torchvision.models import densenet121
+import timm
+
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -21,7 +24,6 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 
-
 def main():
     set_seed(opt.seed)
     set_config(opt)
@@ -31,14 +33,17 @@ def main():
         model = CNNMnist().cuda()
         trainer = FmpuTrainer(model)
     if opt.dataset == 'CIFAR10':
-        model = ResNet9().cuda()
+        model = ResNet9().cuda() # default
+        # model = densenet121(num_classes=10).cuda() # pretrained = False
+        # By default, no pre-trained weights are used 라고 되어 있음
+        # model = timm.create_model('tf_efficientnet_b0', pretrained=False, num_classes=10).cuda()
         trainer = FmpuTrainer(model)
-    if opt.dataset == 'FMNIST':
+    if opt.dataset == 'FMNIST': # FashionMNIST not feredated MNIST
         model = CNNMnist().cuda()
         trainer = FmpuTrainer(model)
-    if opt.dataset == 'SVHN':
-        model = ResNet9().cuda()
-        trainer = FmpuTrainer(model)
+    # if opt.dataset == 'SVHN':
+    #     model = ResNet9().cuda()
+    #     trainer = FmpuTrainer(model)
 
     trainer.begin_train()
 

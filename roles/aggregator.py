@@ -92,8 +92,31 @@ class Cloud:
     def _save_params(self):
         torch.save(self.model.state_dict(), FedAVG_aggregated_model_path)
 
-    def calculate_global_logit(self, tensor_dict_list):
+    # def calculate_global_logit(self, tensor_dict_list): # 평균내서 받은 logit으로 가중 평균 합 내는 방법
+    #     tensor_sums = {}
+    #     tensor_counts = {}
+    #
+    #     # 모든 딕셔너리를 순회하며 텐서들을 더함
+    #     for tensor_dict in tensor_dict_list:
+    #         for key, tensors in tensor_dict.items():
+    #             if key not in tensor_sums:
+    #                 tensor_sums[key] = tensors[0] * tensors[1]
+    #                 tensor_counts[key] = tensors[1]
+    #             else:
+    #                 tensor_sums[key] += tensors[0] * tensors[1]
+    #                 tensor_counts[key] += tensors[1]
+    #
+    #     # 각 키에 대한 평균 텐서 계산
+    #     average_tensors = {key: tensor_sums[key] / tensor_counts[key] for key in tensor_sums}
+    #
+    #     # 결과 리스트 생성
+    #     result = []
+    #     for i in average_tensors.keys():
+    #         result.append(average_tensors.get(i, []))
+    #
+    #     return result
 
+    def calculate_global_logit(self, tensor_dict_list):
         tensor_sums = {}
         tensor_counts = {}
 
@@ -112,7 +135,7 @@ class Cloud:
 
         # 결과 리스트 생성
         result = []
-        for i in range(max(average_tensors.keys()) + 1):
+        for i in average_tensors.keys():
             result.append(average_tensors.get(i, []))
 
         return result

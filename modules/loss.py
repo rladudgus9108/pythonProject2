@@ -111,270 +111,6 @@ class PLoss(nn.Module):
         return crossloss
 
 
-class PLoss_my(nn.Module):
-    def __init__(self, k):
-        super().__init__()
-        self.numClass = torch.tensor(k).cuda()
-
-    """
-            그럼 이제 해야 되는게 P_mask에 해당하지 않는 인덱스들에 대해서
-            거기에 해당하는 인덱스들의 output 값들에 대해 calculate_distance()를 진행하여 label을 예측한다.
-            그리고 거리가 작게 나온 상위 10%를 선택한 후
-            그 때의 label은 calculate_distance()를 하여 제일 작게 나온 인덱스로 설정하고
-            그 때의 output은 기존의 outputs에서 가져올 수 있도록 한다
-            그렇게 되면 얻은 label과 output을 각각 구할 수 있고 
-            그것을 labelsP와 outputsP와 합친 새로운 것을 얻을 수 있다.
-            그 다음에 crossentropyloss를 구하면 되는 것이다.
-            #### 여기서 주의 해야될 점은 label을 할 때 기존의 labels - 10을 하는 것이 아니라 calculate_distance()를 통해 얻은 최소 거리의
-            인덱스로 label을 저장하는 것이다. 즉 기존의 label을 건드리지 않고 새로운 변수에다가 저장해놓는 것이다. ####
-            ### 추가로 output을 index_select()를 통하여 불러올텐데 그때 값이 제대로 가져와 지는지를 확인해야 한다.
-            # 어떻게 보면 loss 만을 구할때 해당하는 output에 대해서 임시로 labeling을 하여 참가 시키는 구조인 것이다.
-            ### 이것을 구현하면 됨
-            # 이것을 구현했다 하면 다음으로 생각할 수 있는 것은
-            # 1. calculate_distance()를 할때, 코사인 유사도를 사용하여 계산하는 방법
-            # 2. 거리계산 / 코사인 유사도 를 적용하지만, 각각 distance 혹은 similarity를 return할 때의 계산 방식에 차이를 두는 것이다
-            # 2-1. 코사인 유사도의 경우 dist2 / dist1 을 생각할 수 있다
-            # 2-2. 코사인 유사도의 경우 dist1 - dist2 를 적용할 수 있다
-            # 3. calculate_distnace()를 할 때 계산하는 방식에 변화를 적용할 수 있다.
-            # 3-1. 
-            """
-
-    def forward(self, outputs, labels, global_logit):
-        # print(global_logit)
-        outputs = outputs.cuda().float()
-        # 이 부분에서 global_logit을 가지고 계산을 해주면 될듯
-        # P_mask 는 label이 되어 있는 데이터의 인덱스를 나타냄
-        P_mask = (labels <= self.numClass - 1).nonzero(as_tuple=False).view(-1)  # labels < 10인 인덱스 return
-        labelsP = torch.index_select(labels, 0, P_mask).cuda()  # 그 때 해당하는 label이 무엇인지 return
-        outputsP = torch.index_select(outputs, 0, P_mask).cuda()
-
-        U_mask = (labels > self.numClass - 1).nonzero(as_tuple=False).view(-1)
-        outputsU = torch.index_select(outputs, 0, U_mask).cuda()
-
-        distances = self.calculate_distances(global_logit, outputsU)
-        min_distance_labels = distances.min(dim=1)[1]
-
-        labels_combined = torch.cat([labelsP, min_distance_labels], dim=0)
-        outputs_combined = torch.cat([outputsP, outputsU], dim=0)
-
-        crossentropyloss = nn.CrossEntropyLoss().cuda()
-
-        crossloss = crossentropyloss(outputs_combined, labels_combined)
-        return crossloss
-
-    def calculate_distances(self, logits, outputs):
-        # 각 로짓과 아웃풋 사이의 거리를 계산합니다.
-        distances = []
-        for logit in logits:
-            distance = torch.norm(logit - outputs, dim=1)
-            distances.append(distance)
-        return torch.stack(distances, dim=1)
-
-
-class PLoss_my2(nn.Module):
-    def __init__(self, k):
-        super().__init__()
-        self.numClass = torch.tensor(k).cuda()
-
-    def forward(self, outputs, labels, global_logit):
-        outputs = outputs.cuda().float()
-        P_mask = (labels <= self.numClass - 1).nonzero(as_tuple=False).view(-1)
-        labelsP = torch.index_select(labels, 0, P_mask).cuda()
-        outputsP = torch.index_select(outputs, 0, P_mask).cuda()
-
-        U_mask = (labels > self.numClass - 1).nonzero(as_tuple=False).view(-1)
-        outputsU = torch.index_select(outputs, 0, U_mask).cuda()
-
-        # 거리 계산
-        distances = self.calculate_distances(global_logit, outputsU)
-
-        min_distances, min_indices = distances.min(dim=1)
-        # min_indices = distances.min(dim=1)[1]
-        # 상위 10% 거리에 해당하는 인덱스를 선택
-        num_selected = int(len(min_distances) * 0.1)  # 10%
-        top_distances_indices = min_distances.topk(num_selected, largest=False)[1]
-
-        # 상위 10%에 해당하는 outputs와 labels만 선택
-        selected_outputs = outputsU[top_distances_indices]
-        selected_labels = min_indices[top_distances_indices]
-
-        # 선택된 outputs와 labels를 기존의 outputsP와 labelsP에 추가
-        labels_combined = torch.cat([labelsP, selected_labels], dim=0)
-        outputs_combined = torch.cat([outputsP, selected_outputs], dim=0)
-
-        crossentropyloss = nn.CrossEntropyLoss().cuda()
-        crossloss = crossentropyloss(outputs_combined, labels_combined)
-        return crossloss
-
-    def calculate_distances(self, logits, outputs):
-        distances = []
-        for logit in logits:
-            distance = torch.norm(logit - outputs, dim=1)
-            distances.append(distance)
-        return torch.stack(distances, dim=1)
-
-    def calculate_similarities(self, logits, outputs):
-        similarities = []
-        # for logit in logits :
-        # similarity =
-        # similarities.append(similarity)
-        # return
-
-
-class PLoss_my3(nn.Module):  # cosine 유사도 계산 + 상위 10 % 구현
-    def __init__(self, k):
-        super().__init__()
-        self.numClass = torch.tensor(k).cuda()
-
-    def forward(self, outputs, labels, global_logit):
-        outputs = outputs.cuda().float()
-        P_mask = (labels <= self.numClass - 1).nonzero(as_tuple=False).view(-1)
-        labelsP = torch.index_select(labels, 0, P_mask).cuda()
-        outputsP = torch.index_select(outputs, 0, P_mask).cuda()
-
-        U_mask = (labels > self.numClass - 1).nonzero(as_tuple=False).view(-1)
-        outputsU = torch.index_select(outputs, 0, U_mask).cuda()
-
-        # 거리 계산
-        # distances = self.calculate_distances(global_logit, outputsU)
-        similarites = self.calculate_similarities(global_logit, outputsU)
-
-        # min_distances, min_indices = distances.min(dim=1)
-        max_similarities, max_indices = similarites.max(dim=1)
-        # min_indices = distances.min(dim=1)[1]
-        # 상위 10% 거리에 해당하는 인덱스를 선택
-        num_selected = int(len(max_similarities) * 0.1)  # 10%
-        top_distances_indices = max_similarities.topk(num_selected, largest=True)[1]
-
-        # 상위 10%에 해당하는 outputs와 labels만 선택
-        selected_outputs = outputsU[top_distances_indices]
-        selected_labels = max_indices[top_distances_indices]
-
-        # 선택된 outputs와 labels를 기존의 outputsP와 labelsP에 추가
-        labels_combined = torch.cat([labelsP, selected_labels], dim=0)
-        outputs_combined = torch.cat([outputsP, selected_outputs], dim=0)
-
-        crossentropyloss = nn.CrossEntropyLoss().cuda()
-        crossloss = crossentropyloss(outputs_combined, labels_combined)
-        return crossloss
-
-    def calculate_similarities(self, logits, outputs):
-        similarities = []
-        for logit in logits:
-            similarity = F.cosine_similarity(logit, outputs, dim=1)
-            similarities.append(similarity)
-        return torch.stack(similarities, dim=1)
-
-
-class PLoss_my4(nn.Module):
-    # cosine 유사도 계산 with sim1 - sim2 + 상위 10
-    def __init__(self, k):
-        super().__init__()
-        self.numClass = torch.tensor(k).cuda()
-
-    def forward(self, outputs, labels, global_logit):
-        outputs = outputs.cuda().float()
-        P_mask = (labels <= self.numClass - 1).nonzero(as_tuple=False).view(-1)
-        labelsP = torch.index_select(labels, 0, P_mask).cuda()
-        outputsP = torch.index_select(outputs, 0, P_mask).cuda()
-
-        U_mask = (labels > self.numClass - 1).nonzero(as_tuple=False).view(-1)
-        outputsU = torch.index_select(outputs, 0, U_mask).cuda()
-
-        # 거리 계산
-        # distances = self.calculate_distances(global_logit, outputsU)
-        similarities = self.calculate_similarities(global_logit, outputsU)
-
-        # 각 output에 대한 최고 유사도와 그 다음 유사도 찾기 및 차이 계산
-        top_two_similarities, top_two_indices = similarities.topk(2, dim=1, largest=True)
-        similarity_differences = top_two_similarities[:, 0] - top_two_similarities[:, 1]
-
-        # 상위 10% 유사도 차이에 해당하는 인덱스 선택
-        num_selected = int(len(similarity_differences) * 0.1)  # 10%
-        top_similarity_diff_indices = similarity_differences.topk(num_selected, largest=True).indices
-
-        # 상위 10%에 해당하는 outputs와 labels만 선택
-        selected_outputs = torch.index_select(outputsU, 0, top_similarity_diff_indices)
-        selected_labels = torch.index_select(top_two_indices[:, 0], 0, top_similarity_diff_indices)
-
-        # 선택된 outputs와 labels를 기존의 outputsP와 labelsP에 추가
-        labels_combined = torch.cat([labelsP, selected_labels], dim=0)
-        outputs_combined = torch.cat([outputsP, selected_outputs], dim=0)
-
-        crossentropyloss = nn.CrossEntropyLoss().cuda()
-        crossloss = crossentropyloss(outputs_combined, labels_combined)
-
-        return crossloss
-
-    def calculate_distances(self, logits, outputs):
-        distances = []
-        for logit in logits:
-            distance = torch.norm(logit - outputs, dim=1)
-            distances.append(distance)
-        return torch.stack(distances, dim=1)
-
-    def calculate_similarities(self, logits, outputs):
-        similarities = []
-        for logit in logits:
-            similarity = F.cosine_similarity(logit, outputs, dim=1)
-            similarities.append(similarity)
-        return torch.stack(similarities, dim=1)
-
-
-class PLoss_my5(nn.Module):  # cosine 유사도 계산 sim2 / sim1 + 상위 10%
-    def __init__(self, k):
-        super().__init__()
-        self.numClass = torch.tensor(k).cuda()
-
-    def forward(self, outputs, labels, global_logit):
-        outputs = outputs.cuda().float()
-        P_mask = (labels <= self.numClass - 1).nonzero(as_tuple=False).view(-1)
-        labelsP = torch.index_select(labels, 0, P_mask).cuda()
-        outputsP = torch.index_select(outputs, 0, P_mask).cuda()
-
-        U_mask = (labels > self.numClass - 1).nonzero(as_tuple=False).view(-1)
-        outputsU = torch.index_select(outputs, 0, U_mask).cuda()
-
-        # 거리 계산
-        # distances = self.calculate_distances(global_logit, outputsU)
-        similarities = self.calculate_similarities(global_logit, outputsU)
-
-        # 각 output에 대한 최고 유사도와 그 다음 유사도 찾기 및 차이 계산
-        top_two_similarities, top_two_indices = similarities.topk(2, dim=1, largest=True)
-        similarity_differences = top_two_similarities[:, 1] / top_two_similarities[:, 0]
-
-        # 상위 10% 유사도 차이에 해당하는 인덱스 선택
-        num_selected = int(len(similarity_differences) * 0.1)  # 10%
-        top_similarity_diff_indices = similarity_differences.topk(num_selected, largest=True).indices
-
-        # 상위 10%에 해당하는 outputs와 labels만 선택
-        selected_outputs = torch.index_select(outputsU, 0, top_similarity_diff_indices)
-        selected_labels = torch.index_select(top_two_indices[:, 0], 0, top_similarity_diff_indices)
-
-        # 선택된 outputs와 labels를 기존의 outputsP와 labelsP에 추가
-        labels_combined = torch.cat([labelsP, selected_labels], dim=0)
-        outputs_combined = torch.cat([outputsP, selected_outputs], dim=0)
-
-        crossentropyloss = nn.CrossEntropyLoss().cuda()
-        crossloss = crossentropyloss(outputs_combined, labels_combined)
-
-        return crossloss
-
-    def calculate_distances(self, logits, outputs):
-        distances = []
-        for logit in logits:
-            distance = torch.norm(logit - outputs, dim=1)
-            distances.append(distance)
-        return torch.stack(distances, dim=1)
-
-    def calculate_similarities(self, logits, outputs):
-        similarities = []
-        for logit in logits:
-            similarity = F.cosine_similarity(logit, outputs, dim=1)
-            similarities.append(similarity)
-        return torch.stack(similarities, dim=1)
-
-
 class MPULoss_V2(nn.Module):
     def __init__(self, k, puW):
         super().__init__()
@@ -401,8 +137,8 @@ class MPULoss_V2(nn.Module):
 
         PULoss = torch.zeros(1).cuda()
 
-        pu3 = (-torch.log(1 - outputsU_Soft + eps) * new_P_indexlist).sum() / \
-              max(1, outputsU.size(0)) / len(indexlist)
+        pu3 = (-torch.log(1 - outputsU_Soft + eps) * new_P_indexlist).sum() / max(1, outputsU.size(0)) / len(
+            indexlist)  # pU loss
 
         PULoss += pu3
         if self.numClass > len(indexlist):  # 반복문에 들어가지 않음 pu1은 계산되지 않음
@@ -423,7 +159,11 @@ class MPULoss_V2(nn.Module):
         crossentropyloss = nn.CrossEntropyLoss()
         crossloss = crossentropyloss(outputsP, labelsP)
 
-        objective = 1 * PULoss * self.puW + crossloss * 1
+        if crossloss.isnan():
+            objective = 1 * PULoss
+        else:
+            objective = 1 * PULoss * self.puW + crossloss * 1
+
         # objective = abs(PULoss * self.puW + crossloss) 절대값을 취해서 실행도 시켜보는중
         # loss 계산에 따라서 더해지는 값이 음수가 크게 반환될 경우 total_loss에 저장되는 loss가 음수일수 있다
         # 그 때를 방지하고자 loss가 아예 음수가 되는 것을 여기서 방지하고 들어가는 것을 실행중
@@ -432,12 +172,7 @@ class MPULoss_V2(nn.Module):
         return objective, PULoss * self.puW, crossloss
 
 
-class MPULoss_my(nn.Module):  # 여기만 고쳐서 진행하면됨
-    # 1. 일단 calculate_distnace가 제대로 되는지 확인
-    # 그리고 그때의 index가 정확하게 선택되는지 확인
-    # 그리고 loss간 weight 설정해서 반영하는거 해야함
-    # 2. unlabel된 데이터에 대해서 10 %만 선택되는건지 확인
-    # 3. 그리고 그 나머지 output에 대해서는 어떻게 처리되는건지 정확하게 확인 후 실행
+class MPULoss_suggest(nn.Module):  # 여기만 고쳐서 진행하면됨
     def __init__(self, k, puW):
         super().__init__()
         self.numClass = torch.tensor(k).cuda()
@@ -450,7 +185,10 @@ class MPULoss_my(nn.Module):  # 여기만 고쳐서 진행하면됨
             similarities.append(similarity)
         return torch.stack(similarities, dim=1)
 
-    def forward(self, outputs, labels, priorlist, indexlist, global_logit):
+    def forward(self, outputs, labels, priorlist, indexlist, global_logit, percentage_of_relabeling_rate):
+        puRate = 2
+        crossRate = 2
+        reRate = 1
         outputs = outputs.float()
         outputs_Soft = F.softmax(outputs, dim=1)
         new_P_indexlist = indexlist
@@ -470,12 +208,12 @@ class MPULoss_my(nn.Module):  # 여기만 고쳐서 진행하면됨
 
         # pu4 손실 계산을 위한 거리 계산
         distances = self.calculate_similarities(global_logit, outputsU)
-        # 각 Unlabeled 데이터에 대해 가장 유사도가 높은 클래스의 인덱스 찾기
+        # 각 Unlabeled 데이터에 대해 거리 계산 후 가장 유사도가 높은 클래스와 유사도 값 구하기
         max_similarities, max_indices = distances.max(dim=1)
 
-        # 유사도가 높은 상위 10%의 데이터 인덱스 선택
-        num_selected = int(len(max_similarities) * 0.1)  # 상위 10%
-        top_similarities, top_sim_indices = max_similarities.topk(num_selected, largest=True)
+        # 유사도가 높은 상위 10%의 데이터 인덱스 선택, 배치 안의 상위 x%임
+        num_selected = int(len(outputs) * percentage_of_relabeling_rate)
+        _, top_sim_indices = max_similarities.topk(num_selected, largest=True)
 
         # 상위 10% 데이터에 대한 임시 라벨 할당
         selected_U_mask = top_sim_indices
@@ -514,8 +252,9 @@ class MPULoss_my(nn.Module):  # 여기만 고쳐서 진행하면됨
         # crossloss 계산 (Positive 데이터에 대한 교차 엔트로피 손실)
         crossloss = crossentropyloss(outputsP, labelsP)
 
-        # 최종 손실 계산
-        objective = 2 * PULoss * self.puW + 2 * crossloss + 1 * pu4_loss
+        if crossloss.isnan():  # Prof Yang : 여기에서 배치 안에 레이블된 데이터가 적으니깐 비율을 조정해서 하는 방법을 생각해봐라 조언
+            objective = puRate * PULoss * self.puW + reRate * pu4_loss
+        else:
+            objective = puRate * PULoss * self.puW + crossRate * crossloss + reRate * pu4_loss
 
         return objective, PULoss * self.puW, crossloss, pu4_loss
-        # return 바꿔야됨 임시로 저렇게만 해놓음

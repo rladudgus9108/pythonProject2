@@ -3,7 +3,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 # seed 고정을 위한 코드
-parser.add_argument('--seed', type=int, default=0, help='random seed')
+parser.add_argument('--seed', type=int, default=2, help='random seed')
 # optimizer
 parser.add_argument('--pu_lr', type=float, default=0.01, help='learning rate of each client')  # default: 0.01
 parser.add_argument('--adjust_lr', action='store_true', default=True,
@@ -11,7 +11,7 @@ parser.add_argument('--adjust_lr', action='store_true', default=True,
 parser.add_argument('--pu_batchsize', type=int, default=100, help='batchsize of dataloader')  # default : 500
 parser.add_argument('--momentum', type=float, default=0.5, help='optimizer param')  # default : 0.9
 # dataset
-parser.add_argument('--dataset', type=str, default='SVHN', help='dataset')
+parser.add_argument('--dataset', type=str, default='MNIST', help='dataset')
 # MNIST, FMNIST, CIFAR10, SVHN
 # parser.add_argument('--dataset', type=str, default='CIFAR10') MNIST
 parser.add_argument('--data_root', type=str, default='./data/',help='data store root')
@@ -21,15 +21,15 @@ parser.add_argument('--pu_weight', type=float, default=1, help='weight of puloss
 parser.add_argument('--local_epochs', type=int, default=1, help='epoches of each client')  # default : 20
 
 # pu dataloader
-parser.add_argument('--randomIndex_num', type=int, default=1, help='rate of positive sample')
+parser.add_argument('--randomIndex_num', type=int, default=2, help='rate of positive sample')
 parser.add_argument('--P_Index_accordance', action='store_true', help='the same positive class index number')  # default
-parser.add_argument('--positiveRate', type=float, default=0.01, help='rate of positive sample')
+parser.add_argument('--positiveRate', type=float, default=0.08, help='rate of positive sample')
 # 여기를 변경하면서 실험중, CIFAR10에서 labeling이 어떨때 높게 나오는지를 확인하기 위해서
 # default : 0.33
 # use Fedmatch dataloader
 parser.add_argument('--task', type=str, default='SS')  # default : FedPU
 parser.add_argument('--useFedmatchDataLoader', action='store_true',
-                    help='the same positive class index number')
+                    help='the same positive class index number') # 아무것도 없으면 False임
 parser.add_argument('--method', type=str, default='FedAvg')  # default : FedAvg
 # task : FedPU, SL, SS -> SL, SS 이지 않을까 생각중
 # method : FedProx, FedAvg, SL -> FedProx, FedAvg, FM 이지 않을까 생각중

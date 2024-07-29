@@ -11,6 +11,8 @@ from roles.aggregator import Cloud
 from datasets.dataSpilt import get_data_loaders, get_default_data_transforms
 from modules.fedprox import GenerateLocalEpochs
 
+import matplotlib.pyplot as plt
+
 
 class FmpuTrainer:
     def __init__(self, model_pu):
@@ -21,7 +23,7 @@ class FmpuTrainer:
             # 윗줄에서 client별 들어가는 class와 거기서 select되는 class들 정해지는게 다 처리됨
 
             self.clients = [Client(_id + 1, copy.deepcopy(model_pu).cuda(), local_dataloaders[_id], test_dataloader,
-                                   priorlist=priorList, indexlist=indexList)
+                                   priorlist=priorList, indexlist=indexList)  # 여기에서 처음에 deepcopy해서 client 설정
                             for _id, priorList, indexList, in zip(list(range(opt.num_clients)), priorlist, indexlist)]
         else:
             self.loader = DataLoader(opt)
@@ -59,7 +61,8 @@ class FmpuTrainer:
     def begin_train(self):
 
         acc_per_round = []
-
+        percentage_of_relabeling_rate = 0.1
+        print(f"Relabeling rate in batch percentage : {percentage_of_relabeling_rate * 100}%")
         for t in range(self.communication_rounds):
             self.current_round = t + 1
             self.cloud_lastmodel = self.cloud.aggregated_client_model
@@ -70,7 +73,7 @@ class FmpuTrainer:
                 self.clients_train_step_SL()
             else:
                 print("##### Semi-supervised setting #####")
-                self.clients_train_step_SS()  # memery up
+                self.clients_train_step_SS_suggest(percentage_of_relabeling_rate)
 
             self.cloud.aggregate(self.clientSelect_idxs)
             acc_per_round.append(self.cloud.validation(t))
@@ -80,10 +83,19 @@ class FmpuTrainer:
             print("Hightest Round:{}, Highest Accuracy: {:.4f} %".format(max_acc_round, max_acc))
             print("__________________________________________")
 
+        # plt.plot(acc_per_round, label="SL batch : 1024")
+        # plt.xlabel("round")
+        # plt.ylabel("Acc")
+        #
+        # plt.legend()
+        # plt.show()
+        print(acc_per_round)
+
     def clients_select(self):
-        m = max(int(opt.clientSelect_Rate * opt.num_clients), 1)
-        # default로 설정된 것은 아래 코드
+        # default
+        # m = max(int(opt.clientSelect_Rate * opt.num_clients), 1)
         # self.clientSelect_idxs = np.random.choice(range(opt.num_clients), m, replace=False)
+
         self.clientSelect_idxs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # default
         # self.clientSelect_idxs = [0, 1, 2, 3, 4]
         # self.clientSelect_idxs = [0, 1]
@@ -91,6 +103,7 @@ class FmpuTrainer:
 
     def clients_train_step_SS(self):
         if 'FedProx' in opt.method:
+            print("Invalid")
             percentage = opt.percentage
             mu = opt.mu
             print(f"System heterogeneity set to {percentage}% stragglers.\n")
@@ -111,16 +124,17 @@ class FmpuTrainer:
             for idx in self.clientSelect_idxs:
                 self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
                 if opt.use_PULoss:  # PULoss는 positive Unlabel loss를 의미하는것, else문은 positive loss를 의미
+                    # self.clients[idx].train_fedavg_pu()
                     self.clients[idx].train_fedavg_pu_mod()  # opt에 PULoss를 설정하는 부분은 없음 -> config.py에서 설정함
-                else:  # 내가 지금 생각하는 것은 fedavg_p()를 통해서 positive data로만 loss를 구하는 부분에 있어서
-                    # 이 부분에서 unlabel data에 대해서 라벨링을 해서 어떻게 나오는지까지만을 보여주면 되지 않을까
-                    # PULoss에 적용하기에는 이 논문에 대해서 제대로 분석이 이뤄지지 않았기 때문에 어느 부분에 이것을 적용해야할지 모르겠음
-                    self.clients[idx].train_fedavg_p()
+                else:
+                    print("Invalid")
+                    return
         else:
             return
 
-    def clients_train_step_SS_my(self):
+    def clients_train_step_SS_suggest(self, percentage_of_relabeling_rate):
         if 'FedProx' in opt.method:
+            print("Invalid")
             percentage = opt.percentage
             mu = opt.mu
             print(f"System heterogeneity set to {percentage}% stragglers.\n")
@@ -138,38 +152,7 @@ class FmpuTrainer:
                     self.clients[idx].train_fedprox_p(epochs=heterogenous_epoch_list[idx], mu=mu,
                                                       globalmodel=self.cloud.aggregated_client_model)
         elif 'FedAvg' in opt.method:
-            for idx in self.clientSelect_idxs:
-                self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
-                if opt.use_PULoss:  # PULoss는 positive Unlabel loss를 의미하는것, else문은 positive loss를 의미
-                    self.clients[idx].train_fedavg_pu()  # opt에 PULoss를 설정하는 부분은 없음 -> config에서 설정
-                    # default : self.clients[idx].train_fedavg_pu()
-                else:  # 내가 지금 생각하는 것은 fedavg_p()를 통해서 positive data로만 loss를 구하는 부분에 있어서
-                    # 이 부분에서 unlabel data에 대해서 라벨링을 해서 어떻게 나오는지까지만을 보여주면 되지 않을까
-                    # PULoss에 적용하기에는 이 논문에 대해서 제대로 분석이 이뤄지지 않았기 때문에 어느 부분에 이것을 적용해야할지 모르겠음
-                    self.clients[idx].train_fedavg_p_mod()
-                    # 원래 fedavg_p() 였는데 수정함
-        else:
-            return
-
-    def clients_train_step_SS_my_2(self):  # 현재 이 코드로 실행중
-        if 'FedProx' in opt.method:
-            percentage = opt.percentage
-            mu = opt.mu
-            print(f"System heterogeneity set to {percentage}% stragglers.\n")
-            print(f"Picking {len(self.clientSelect_idxs)} random clients per round.\n")
-            heterogenous_epoch_list = GenerateLocalEpochs(percentage, size=len(self.clients),
-                                                          max_epochs=opt.local_epochs)
-            heterogenous_epoch_list = np.array(heterogenous_epoch_list)
-
-            for idx in self.clientSelect_idxs:
-                self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
-                if opt.use_PULoss:
-                    self.clients[idx].train_fedprox_pu(epochs=heterogenous_epoch_list[idx], mu=mu,
-                                                       globalmodel=self.cloud.aggregated_client_model)
-                else:
-                    self.clients[idx].train_fedprox_p(epochs=heterogenous_epoch_list[idx], mu=mu,
-                                                      globalmodel=self.cloud.aggregated_client_model)
-        elif 'FedAvg' in opt.method:
+            print("Suggest SS")
             client_logit_store = []
             for idx in self.clientSelect_idxs:
                 self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
@@ -179,16 +162,17 @@ class FmpuTrainer:
 
             for idx in self.clientSelect_idxs:
                 if opt.use_PULoss:
-                    self.clients[idx].train_fedavg_pu_my_2(global_logit)
+                    self.clients[idx].train_fedavg_pu_suggest(global_logit, percentage_of_relabeling_rate)
                     # default : self.clients[idx].train_fedavg_pu()
                 else:
-                    self.clients[idx].train_fedavg_p_mod()
-                    # default : self.clients[idx].train_fedavg_p()
+                    print("Invalid")
+                    return
         else:
             return
 
     def clients_train_step_SL(self):
         if 'FedProx' in opt.method:
+            print("Invalid")
             percentage = opt.percentage  # 0.5  0.9
             mu = opt.mu
             print(f"System heterogeneity set to {percentage}% stragglers.\n")
@@ -203,60 +187,8 @@ class FmpuTrainer:
         elif 'FedAvg' in opt.method:
             for idx in self.clientSelect_idxs:
                 self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
+                # self.clients[idx].train_fedavg_p()
                 self.clients[idx].train_fedavg_p_mod()
         else:
+            print("Invalid")
             return
-
-    def clients_train_step_SL_my(self):
-        if 'FedProx' in opt.method:
-            percentage = opt.percentage  # 0.5  0.9
-            mu = opt.mu
-            print(f"System heterogeneity set to {percentage}% stragglers.\n")
-            print(f"Picking {len(self.clientSelect_idxs)} random clients per round.\n")
-            heterogenous_epoch_list = GenerateLocalEpochs(percentage, size=len(self.clients),
-                                                          max_epochs=opt.local_epochs)
-            heterogenous_epoch_list = np.array(heterogenous_epoch_list)
-            for idx in self.clientSelect_idxs:
-                self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
-                self.clients[idx].train_fedprox_p(epochs=heterogenous_epoch_list[idx], mu=mu,
-                                                  globalmodel=self.cloud.aggregated_client_model)
-        elif 'FedAvg' in opt.method:
-            client_logit_store = []
-            for idx in self.clientSelect_idxs:
-                self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
-                client_logit_store.append(self.clients[idx].send_logit())
-
-            global_logit = self.cloud.calculate_global_logit(client_logit_store)
-            for idx in self.clientSelect_idxs:
-                self.clients[idx].train_fedavg_p_mod_2(global_logit)
-        else:
-            return
-
-    # def clients_train_step_SL_my_round(self):
-    #     if 'FedProx' in opt.method:
-    #         percentage = opt.percentage  # 0.5  0.9
-    #         mu = opt.mu
-    #         print(f"System heterogeneity set to {percentage}% stragglers.\n")
-    #         print(f"Picking {len(self.clientSelect_idxs)} random clients per round.\n")
-    #         heterogenous_epoch_list = GenerateLocalEpochs(percentage, size=len(self.clients),
-    #                                                       max_epochs=opt.local_epochs)
-    #         heterogenous_epoch_list = np.array(heterogenous_epoch_list)
-    #         for idx in self.clientSelect_idxs:
-    #             self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
-    #             self.clients[idx].train_fedprox_p(epochs=heterogenous_epoch_list[idx], mu=mu,
-    #                                               globalmodel=self.cloud.aggregated_client_model)
-    #     elif 'FedAvg' in opt.method:
-    #         if self.communication_rounds % 5 == 1:
-    #             client_logit_store = []
-    #             for idx in self.clientSelect_idxs:
-    #                 print(self.current_round)
-    #                 self.clients[idx].model.load_state_dict(self.cloud_lastmodel.state_dict())
-    #                 client_logit_store.append(self.clients[idx].send_logit())
-    #             global_logit = self.cloud.calculate_global_logit(client_logit_store)
-    #         else :
-    #             global_logit = self.previous_global_logit
-    #
-    #         for idx in self.clientSelect_idxs:
-    #             self.clients[idx].train_fedavg_p_mod_2(global_logit)
-    #     else:
-    #         return
