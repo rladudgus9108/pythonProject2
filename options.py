@@ -3,9 +3,9 @@ import argparse
 parser = argparse.ArgumentParser()
 
 # seed 고정을 위한 코드
-parser.add_argument('--seed', type=int, default=2, help='random seed')
+parser.add_argument('--seed', type=int, default=4, help='random seed')
 # optimizer
-parser.add_argument('--pu_lr', type=float, default=0.01, help='learning rate of each client')  # default: 0.01
+parser.add_argument('--pu_lr', type=float, default=0.005, help='learning rate of each client')  # default: 0.01
 parser.add_argument('--adjust_lr', action='store_true', default=True,
                     help='adjust lr according to communication rounds')
 parser.add_argument('--pu_batchsize', type=int, default=100, help='batchsize of dataloader')  # default : 500
@@ -23,7 +23,7 @@ parser.add_argument('--local_epochs', type=int, default=1, help='epoches of each
 # pu dataloader
 parser.add_argument('--randomIndex_num', type=int, default=2, help='rate of positive sample')
 parser.add_argument('--P_Index_accordance', action='store_true', help='the same positive class index number')  # default
-parser.add_argument('--positiveRate', type=float, default=0.08, help='rate of positive sample')
+parser.add_argument('--positiveRate', type=float, default=0.01, help='rate of positive sample')
 # 여기를 변경하면서 실험중, CIFAR10에서 labeling이 어떨때 높게 나오는지를 확인하기 위해서
 # default : 0.33
 # use Fedmatch dataloader

@@ -173,6 +173,8 @@ class Client:
                 labels = labels.cuda()
                 self.optimizer_pu.zero_grad()  # tidings清零
                 outputs = self.model(inputs)  # on cuda 0
+                if torch.any(torch.isnan(outputs)):
+                    raise ValueError("Detected NaN: Stopping the execution")
                 # print(outputs.dtype, outputs.device)
 
                 loss, puloss, celoss, reloss = self.loss(outputs, labels, self.priorlist, self.indexlist, global_logit,
